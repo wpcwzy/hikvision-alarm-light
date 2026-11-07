@@ -54,6 +54,7 @@ from .const import (
     CONF_NVR_VERIFY_SSL,
     CONF_PRESET_AUTO,
     CONF_PRESET_DAY,
+    CONF_PRESET_INTERVAL,
     CONF_PRESET_LIGHT_ON,
     CONF_PRESET_NIGHT,
     CONF_TRIGGER_CHANNEL,
@@ -71,6 +72,7 @@ from .const import (
     DEFAULT_NVR_PORT,
     DEFAULT_PRESET_AUTO,
     DEFAULT_PRESET_DAY,
+    DEFAULT_PRESET_INTERVAL_SECONDS,
     DEFAULT_PRESET_LIGHT_ON,
     DEFAULT_PRESET_NIGHT,
     DEFAULT_TRIGGER_CHANNEL,
@@ -80,11 +82,13 @@ from .const import (
     MAX_CHANNEL,
     MAX_HOLD_SECONDS,
     MAX_PRESET_ID,
+    MAX_PRESET_INTERVAL_SECONDS,
     MIN_BOOST_SECONDS,
     MIN_BRIGHTNESS,
     MIN_CHANNEL,
     MIN_HOLD_SECONDS,
     MIN_PRESET_ID,
+    MIN_PRESET_INTERVAL_SECONDS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -246,6 +250,19 @@ def _parse_preset(value: Any, default: int) -> int | None:
     if not MIN_PRESET_ID <= preset <= MAX_PRESET_ID:
         return None
     return preset
+
+
+def _parse_preset_interval(value: Any, default: int) -> int | None:
+    """Parse the pause between the two restore presets (seconds)."""
+    if value is None or str(value).strip() == "":
+        return default
+    try:
+        interval = int(value)
+    except (TypeError, ValueError):
+        return None
+    if not MIN_PRESET_INTERVAL_SECONDS <= interval <= MAX_PRESET_INTERVAL_SECONDS:
+        return None
+    return interval
 
 
 def _format_channels(channels: list[int] | tuple[int, ...]) -> str:
@@ -433,6 +450,7 @@ class HikvisionAlarmLightConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_PRESET_DAY: DEFAULT_PRESET_DAY,
                         CONF_PRESET_NIGHT: DEFAULT_PRESET_NIGHT,
                         CONF_PRESET_AUTO: DEFAULT_PRESET_AUTO,
+                        CONF_PRESET_INTERVAL: DEFAULT_PRESET_INTERVAL_SECONDS,
                     }
                     return self.async_create_entry(title=name, data=data)
                 finally:
@@ -486,6 +504,11 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
         current_auto_preset = _current_preset(
             merged, CONF_PRESET_AUTO, DEFAULT_PRESET_AUTO
         )
+        current_preset_interval = _parse_preset_interval(
+            merged.get(CONF_PRESET_INTERVAL), DEFAULT_PRESET_INTERVAL_SECONDS
+        )
+        if current_preset_interval is None:
+            current_preset_interval = DEFAULT_PRESET_INTERVAL_SECONDS
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -505,6 +528,10 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
             auto_preset = _parse_preset(
                 user_input.get(CONF_PRESET_AUTO), DEFAULT_PRESET_AUTO
             )
+            preset_interval = _parse_preset_interval(
+                user_input.get(CONF_PRESET_INTERVAL),
+                DEFAULT_PRESET_INTERVAL_SECONDS,
+            )
             try:
                 hold_seconds = int(user_input[CONF_HOLD_SECONDS])
                 max_boost_seconds = int(user_input[CONF_MAX_BOOST_SECONDS])
@@ -521,6 +548,8 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
                     auto_preset,
                 ):
                     errors["base"] = "invalid_presets"
+                elif preset_interval is None:
+                    errors["base"] = "invalid_preset_interval"
                 elif (
                     night_start is None or night_end is None or night_start == night_end
                 ):
@@ -549,6 +578,7 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
                         CONF_PRESET_DAY: day_preset,
                         CONF_PRESET_NIGHT: night_preset,
                         CONF_PRESET_AUTO: auto_preset,
+                        CONF_PRESET_INTERVAL: preset_interval,
                     }
                     self.hass.config_entries.async_update_entry(
                         entry, title=name, options=options
@@ -572,6 +602,8 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
                 current_night_preset = night_preset
             if auto_preset is not None:
                 current_auto_preset = auto_preset
+            if preset_interval is not None:
+                current_preset_interval = preset_interval
 
         return self.async_show_form(
             step_id="init",
@@ -657,6 +689,17 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
                             max=MAX_PRESET_ID,
                             mode=NumberSelectorMode.BOX,
                             step=1,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_PRESET_INTERVAL, default=current_preset_interval
+                    ): NumberSelector(
+                        NumberSelectorConfig(
+                            min=MIN_PRESET_INTERVAL_SECONDS,
+                            max=MAX_PRESET_INTERVAL_SECONDS,
+                            mode=NumberSelectorMode.BOX,
+                            step=1,
+                            unit_of_measurement="s",
                         )
                     ),
                 }

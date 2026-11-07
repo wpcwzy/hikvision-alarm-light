@@ -65,16 +65,18 @@
           "hold_seconds": "报警结束后保持（秒）",
           "max_boost_seconds": "安全上限（秒）",
           "brightness": "亮度（%）",
-          "preset_light_on": "亮灯时调用的预置点（0 = 关闭）",
+          "preset_light_on": "亮灯时调用的预置点（默认 0 = 不切换）",
           "preset_day": "白天预置点（0 = 关闭）",
           "preset_night": "黑夜预置点（0 = 关闭）",
-          "preset_auto": "日夜自动预置点（0 = 关闭）"
+          "preset_auto": "日夜自动预置点（0 = 关闭）",
+          "preset_interval": "两个预置点调用间隔（秒，0 = 不等待）"
         }
       }
     },
     "error": {
       "invalid_trigger_channels": "报警通道必须是 1-64 的数字，例如 2,6。",
       "invalid_presets": "预置点必须在 0 到 999 之间（0 表示关闭该步骤）。",
+      "invalid_preset_interval": "预置点调用间隔必须在 0 到 10 秒之间。",
       "invalid_night_window": "夜间开始/结束必须是有效的 HH:MM 时间，并且不能相同。",
       "invalid_hold_seconds": "报警结束后保持时间必须在 10 到 3600 秒之间。",
       "invalid_max_boost": "安全上限必须在 60 到 3600 秒之间。",

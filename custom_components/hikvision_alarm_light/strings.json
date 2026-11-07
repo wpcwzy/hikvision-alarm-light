@@ -65,16 +65,18 @@
           "hold_seconds": "Keep light after alarm ends (s)",
           "max_boost_seconds": "Safety limit (s)",
           "brightness": "Brightness (%)",
-          "preset_light_on": "Preset when light turns on (0 = off)",
+          "preset_light_on": "Preset when the light turns on (default 0 = keep B/W)",
           "preset_day": "Day preset (0 = off)",
           "preset_night": "Night preset (0 = off)",
-          "preset_auto": "Automatic day/night preset (0 = off)"
+          "preset_auto": "Automatic day/night preset (0 = off)",
+          "preset_interval": "Pause between the two presets (s, 0 = no wait)"
         }
       }
     },
     "error": {
       "invalid_trigger_channels": "Alarm channels must be 1-64, for example 2,6.",
       "invalid_presets": "PTZ presets must be between 0 and 999 (0 disables the step).",
+      "invalid_preset_interval": "The pause between presets must be between 0 and 10 seconds.",
       "invalid_night_window": "Night start and end must be valid HH:MM times and must differ.",
       "invalid_hold_seconds": "Hold time must be between 10 and 3600 seconds.",
       "invalid_max_boost": "Safety limit must be between 60 and 3600 seconds.",

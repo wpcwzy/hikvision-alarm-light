@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -43,19 +44,23 @@ from .const import (
     CONF_NVR_VERIFY_SSL,
     CONF_PRESET_AUTO,
     CONF_PRESET_DAY,
+    CONF_PRESET_INTERVAL,
     CONF_PRESET_LIGHT_ON,
     CONF_PRESET_NIGHT,
     CONF_TRIGGER_CHANNEL,
     CONF_TRIGGER_CHANNELS,
     DEFAULT_PRESET_AUTO,
     DEFAULT_PRESET_DAY,
+    DEFAULT_PRESET_INTERVAL_SECONDS,
     DEFAULT_PRESET_LIGHT_ON,
     DEFAULT_PRESET_NIGHT,
     DEFAULT_TRIGGER_CHANNEL,
     DOMAIN,
     EVENT_TYPE_FIELDDETECTION,
     MAX_PRESET_ID,
+    MAX_PRESET_INTERVAL_SECONDS,
     MIN_PRESET_ID,
+    MIN_PRESET_INTERVAL_SECONDS,
     STORE_VERSION,
 )
 
@@ -90,6 +95,7 @@ class LinkSettings:
     preset_day: int
     preset_night: int
     preset_auto: int
+    preset_interval_seconds: int
 
     @classmethod
     def from_entry(cls, data: dict) -> LinkSettings:
@@ -124,6 +130,9 @@ class LinkSettings:
                 data.get(CONF_PRESET_NIGHT), DEFAULT_PRESET_NIGHT
             ),
             preset_auto=_parse_preset(data.get(CONF_PRESET_AUTO), DEFAULT_PRESET_AUTO),
+            preset_interval_seconds=_parse_preset_interval(
+                data.get(CONF_PRESET_INTERVAL)
+            ),
         )
 
 
@@ -161,6 +170,19 @@ def _parse_preset(value: object, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return preset if MIN_PRESET_ID <= preset <= MAX_PRESET_ID else default
+
+
+def _parse_preset_interval(value: object) -> int:
+    """Return the wait between the two restore presets in whole seconds."""
+    if value is None or value == "":
+        return DEFAULT_PRESET_INTERVAL_SECONDS
+    try:
+        interval = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return DEFAULT_PRESET_INTERVAL_SECONDS
+    if not MIN_PRESET_INTERVAL_SECONDS <= interval <= MAX_PRESET_INTERVAL_SECONDS:
+        return DEFAULT_PRESET_INTERVAL_SECONDS
+    return interval
 
 
 def _parse_time(value: str | time) -> time:
@@ -525,6 +547,10 @@ class AlarmLightController:
             self.settings.preset_light_on, "light on (day/colour)"
         )
 
+    async def _async_preset_delay(self, seconds: int) -> None:
+        """Wait between two PTZ commands so the camera does not drop one."""
+        await asyncio.sleep(seconds)
+
     def _preset_for_restore(self, now: datetime) -> int:
         """Pick the day or night preset for the current moment."""
         if is_night(now, self.settings.night_start, self.settings.night_end):
@@ -574,11 +600,21 @@ class AlarmLightController:
             )
             # After switching the light off, first return to the day or night
             # picture for the current time, then hand control back to the
-            # camera's automatic day/night switching.
-            await self._async_call_preset(
-                self._preset_for_restore(dt_util.now()),
-                "light off (day/night mode)",
-            )
+            # camera's automatic day/night switching.  The camera can silently
+            # drop a PTZ command that arrives while it is still busy with the
+            # previous one, so leave a configurable pause in between.
+            first_preset = self._preset_for_restore(dt_util.now())
+            await self._async_call_preset(first_preset, "light off (day/night mode)")
+            if (
+                first_preset > 0
+                and self.settings.preset_auto > 0
+                and self.settings.preset_interval_seconds > 0
+            ):
+                _LOGGER.debug(
+                    "Waiting %ss before the automatic day/night preset",
+                    self.settings.preset_interval_seconds,
+                )
+                await self._async_preset_delay(self.settings.preset_interval_seconds)
             await self._async_call_preset(
                 self.settings.preset_auto, "light off (auto day/night)"
             )

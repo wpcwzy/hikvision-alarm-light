@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -37,6 +37,7 @@ from custom_components.hikvision_alarm_light.const import (
     CONF_NVR_VERIFY_SSL,
     CONF_PRESET_AUTO,
     CONF_PRESET_DAY,
+    CONF_PRESET_INTERVAL,
     CONF_PRESET_LIGHT_ON,
     CONF_PRESET_NIGHT,
     CONF_TRIGGER_CHANNEL,
@@ -73,10 +74,11 @@ def make_data(
         CONF_HOLD_SECONDS: 120,
         CONF_MAX_BOOST_SECONDS: 300,
         CONF_BRIGHTNESS: 100,
-        CONF_PRESET_LIGHT_ON: 39,
+        CONF_PRESET_LIGHT_ON: 0,
         CONF_PRESET_DAY: 39,
         CONF_PRESET_NIGHT: 40,
         CONF_PRESET_AUTO: 46,
+        CONF_PRESET_INTERVAL: 0,
     }
 
 
@@ -154,7 +156,8 @@ async def test_alarm_on_either_channel_boosts_light(hass: HomeAssistant) -> None
     # The direct aux LIGHT command must not change the supplement mode,
     # otherwise IR behaviour could be disturbed.
     assert camera.mode == "eventIntelligence"
-    assert camera.presets == [39]
+    # B/W (IR) picture is kept while the light is on: no preset is called.
+    assert camera.presets == []
     assert hass.states.get(boost_id).state == "on"
 
     reader.emit_event(event(2, "inactive"))
@@ -181,13 +184,13 @@ async def test_alarm_on_either_channel_boosts_light(hass: HomeAssistant) -> None
     assert camera.closed is True
 
 
-async def test_presets_on_boost_and_restore(hass: HomeAssistant) -> None:
+async def test_presets_only_on_restore(hass: HomeAssistant) -> None:
     _entry, camera, reader = await setup_entry(hass)
 
     reader.emit_event(event(2, "active"))
     await hass.async_block_till_done()
-    # Preset 39 forces the colour (day) picture while the light is on.
-    assert camera.presets == [39]
+    # The B/W picture is kept while the light is on.
+    assert camera.presets == []
 
     reader.emit_event(event(2, "inactive"))
     await hass.async_block_till_done()
@@ -195,8 +198,42 @@ async def test_presets_on_boost_and_restore(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
     # The whole test window is "night", so preset 40 is used before the
     # automatic day/night preset 46.
-    assert camera.presets == [39, 40, 46]
+    assert camera.presets == [40, 46]
     assert camera.aux_on is False
+
+
+async def test_light_on_preset_can_be_enabled(hass: HomeAssistant) -> None:
+    data = make_data()
+    data[CONF_PRESET_LIGHT_ON] = 39
+    _entry, camera, reader = await setup_entry(hass, make_entry(data=data))
+
+    reader.emit_event(event(2, "active"))
+    await hass.async_block_till_done()
+    assert camera.presets == [39]
+
+
+async def test_restore_presets_use_configured_interval(
+    hass: HomeAssistant,
+) -> None:
+    data = make_data()
+    data[CONF_PRESET_INTERVAL] = 3
+    entry, camera, reader = await setup_entry(hass, make_entry(data=data))
+    controller = entry.runtime_data.controller
+
+    reader.emit_event(event(2, "active"))
+    await hass.async_block_till_done()
+    assert camera.presets == []
+
+    with patch.object(
+        type(controller), "_async_preset_delay", new=AsyncMock()
+    ) as delay:
+        reader.emit_event(event(2, "inactive"))
+        await hass.async_block_till_done()
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=130))
+        await hass.async_block_till_done()
+
+    delay.assert_awaited_once_with(3)
+    assert camera.presets == [40, 46]
 
 
 async def test_day_restore_uses_day_preset(hass: HomeAssistant) -> None:
@@ -217,14 +254,14 @@ async def test_day_restore_uses_day_preset(hass: HomeAssistant) -> None:
         "button", "press", {"entity_id": test_id}, blocking=True
     )
     await hass.async_block_till_done()
-    assert camera.presets == [39]
+    assert camera.presets == []
 
     await hass.services.async_call(
         "button", "press", {"entity_id": restore_id}, blocking=True
     )
     await hass.async_block_till_done()
     # Daytime: preset 39 (day) first, then preset 46 (automatic).
-    assert camera.presets == [39, 39, 46]
+    assert camera.presets == [39, 46]
     assert camera.aux_on is False
 
 
