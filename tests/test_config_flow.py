@@ -1,0 +1,116 @@
+"""Tests for the alarm-light config flow."""
+
+from __future__ import annotations
+
+from unittest.mock import patch
+
+from homeassistant import config_entries
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
+
+from custom_components.hikvision_alarm_light.const import (
+    CONF_BRIGHTNESS,
+    CONF_CAMERA_CHANNEL,
+    CONF_CAMERA_HOST,
+    CONF_CAMERA_PASSWORD,
+    CONF_CAMERA_PORT,
+    CONF_CAMERA_USE_SSL,
+    CONF_CAMERA_USERNAME,
+    CONF_CAMERA_VERIFY_SSL,
+    CONF_HOLD_SECONDS,
+    CONF_MAX_BOOST_SECONDS,
+    CONF_NAME,
+    CONF_NIGHT_END,
+    CONF_NIGHT_START,
+    CONF_NVR_HOST,
+    CONF_NVR_PASSWORD,
+    CONF_NVR_PORT,
+    CONF_NVR_USE_SSL,
+    CONF_NVR_USERNAME,
+    CONF_NVR_VERIFY_SSL,
+    CONF_TRIGGER_CHANNEL,
+    DOMAIN,
+)
+
+NVR_INPUT = {
+    CONF_NVR_HOST: "192.0.2.2",
+    CONF_NVR_PORT: 80,
+    CONF_NVR_USE_SSL: False,
+    CONF_NVR_VERIFY_SSL: False,
+    CONF_NVR_USERNAME: "admin",
+    CONF_NVR_PASSWORD: "secret",
+    CONF_TRIGGER_CHANNEL: 2,
+}
+CAMERA_INPUT = {
+    CONF_CAMERA_HOST: "192.0.2.10",
+    CONF_CAMERA_PORT: 80,
+    CONF_CAMERA_USE_SSL: False,
+    CONF_CAMERA_VERIFY_SSL: False,
+    CONF_CAMERA_USERNAME: "admin",
+    CONF_CAMERA_PASSWORD: "secret",
+    CONF_CAMERA_CHANNEL: 1,
+    CONF_NAME: "后院入侵补光联动",
+    CONF_NIGHT_START: "18:00",
+    CONF_NIGHT_END: "06:00",
+    CONF_HOLD_SECONDS: 120,
+    CONF_MAX_BOOST_SECONDS: 300,
+    CONF_BRIGHTNESS: 100,
+}
+
+
+async def test_config_flow_creates_entry(hass: HomeAssistant) -> None:
+    """The two-step flow validates both devices and creates an entry."""
+    with patch(
+        "custom_components.hikvision_alarm_light.config_flow.HikvisionIsapiClient",
+        new=__import__(
+            "tests.fakes", fromlist=["FakeHikvisionClient"]
+        ).FakeHikvisionClient,
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "user"
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], NVR_INPUT
+        )
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "camera"
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], CAMERA_INPUT
+        )
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    assert result["title"] == "后院入侵补光联动"
+    assert result["data"][CONF_NVR_HOST] == "192.0.2.2"
+    assert result["data"][CONF_TRIGGER_CHANNEL] == 2
+    assert result["data"][CONF_CAMERA_HOST] == "192.0.2.10"
+    assert result["data"][CONF_CAMERA_CHANNEL] == 1
+    assert result["data"][CONF_HOLD_SECONDS] == 120
+    assert result["result"].unique_id == "SERIAL-192.0.2.2:2->SERIAL-192.0.2.10:1"
+
+
+async def test_config_flow_rejects_invalid_times(hass: HomeAssistant) -> None:
+    """Equal night start/end is rejected before creating the entry."""
+    with patch(
+        "custom_components.hikvision_alarm_light.config_flow.HikvisionIsapiClient",
+        new=__import__(
+            "tests.fakes", fromlist=["FakeHikvisionClient"]
+        ).FakeHikvisionClient,
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], NVR_INPUT
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {**CAMERA_INPUT, CONF_NIGHT_START: "18:00", CONF_NIGHT_END: "18:00"},
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "camera"
+    assert result["errors"] == {"base": "invalid_night_window"}

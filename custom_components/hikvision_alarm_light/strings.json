@@ -1,0 +1,57 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to the NVR",
+        "description": "Enter the NVR that produces the intrusion alarm and the camera channel to watch. The credentials are stored by Home Assistant and only sent to the NVR."
+      },
+      "camera": {
+        "title": "Connect to the light camera",
+        "description": "NVR {nvr_host}, alarm channel {trigger_channel}. Enter the PTZ/camera whose white light should be boosted, plus the night window and hold time."
+      }
+    },
+    "error": {
+      "invalid_host": "The host must not be empty.",
+      "invalid_auth": "The username or password is incorrect.",
+      "cannot_connect": "Could not connect to the device.",
+      "nvr_invalid": "The NVR channel does not expose field detection or the account lacks permission.",
+      "camera_invalid": "The camera does not expose supplement-light settings.",
+      "invalid_night_window": "Night start and end must be valid HH:MM times and must differ.",
+      "invalid_hold_seconds": "Hold time must be between 10 and 3600 seconds.",
+      "invalid_max_boost": "Safety limit must be between 60 and 3600 seconds.",
+      "invalid_brightness": "Brightness must be between 1 and 100.",
+      "already_configured": "This NVR channel -> camera link is already configured.",
+      "unknown": "Unexpected error; check the Home Assistant logs."
+    },
+    "abort": {
+      "already_configured": "This NVR channel -> camera link is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Alarm-light options",
+        "description": "NVR {nvr_host} channel {nvr_channel} -> camera {camera_host} channel {camera_channel}."
+      }
+    },
+    "error": {
+      "invalid_night_window": "Night start and end must be valid HH:MM times and must differ.",
+      "invalid_hold_seconds": "Hold time must be between 10 and 3600 seconds.",
+      "invalid_max_boost": "Safety limit must be between 60 and 3600 seconds.",
+      "invalid_brightness": "Brightness must be between 1 and 100.",
+      "invalid_values": "One or more values are invalid.",
+      "unknown": "Unexpected error; check the Home Assistant logs."
+    },
+    "abort": {
+      "entry_not_found": "The config entry could not be found."
+    }
+  },
+  "exceptions": {
+    "cannot_boost": {
+      "message": "Could not boost the camera light: {error}"
+    },
+    "cannot_restore": {
+      "message": "Could not restore the smart supplement-light mode: {error}"
+    }
+  }
+}

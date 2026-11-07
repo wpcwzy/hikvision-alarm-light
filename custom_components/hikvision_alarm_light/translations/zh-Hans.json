@@ -1,0 +1,57 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "连接报警 NVR",
+        "description": "请输入产生区域入侵报警的 NVR 地址、凭据和需要监听的通道。凭据只保存在 Home Assistant 中，并仅发送给设备。"
+      },
+      "camera": {
+        "title": "连接补光摄像机",
+        "description": "NVR {nvr_host}，报警通道 {trigger_channel}。请输入需要增强照明的球机/摄像机信息，以及夜间时段和保持时间。"
+      }
+    },
+    "error": {
+      "invalid_host": "主机地址不能为空。",
+      "invalid_auth": "用户名或密码错误。",
+      "cannot_connect": "无法连接设备。",
+      "nvr_invalid": "NVR 通道不支持区域入侵侦测，或账号权限不足。",
+      "camera_invalid": "摄像机不支持补光灯配置。",
+      "invalid_night_window": "夜间开始/结束必须是有效的 HH:MM 时间，并且不能相同。",
+      "invalid_hold_seconds": "报警结束后保持时间必须在 10 到 3600 秒之间。",
+      "invalid_max_boost": "安全上限必须在 60 到 3600 秒之间。",
+      "invalid_brightness": "亮度必须在 1 到 100 之间。",
+      "already_configured": "该 NVR 通道 → 摄像机补光联动已经配置过了。",
+      "unknown": "发生未知错误，请查看 Home Assistant 日志。"
+    },
+    "abort": {
+      "already_configured": "该 NVR 通道 → 摄像机补光联动已经配置过了。"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "报警补光选项",
+        "description": "NVR {nvr_host} 通道 {nvr_channel} → 摄像机 {camera_host} 通道 {camera_channel}。"
+      }
+    },
+    "error": {
+      "invalid_night_window": "夜间开始/结束必须是有效的 HH:MM 时间，并且不能相同。",
+      "invalid_hold_seconds": "报警结束后保持时间必须在 10 到 3600 秒之间。",
+      "invalid_max_boost": "安全上限必须在 60 到 3600 秒之间。",
+      "invalid_brightness": "亮度必须在 1 到 100 之间。",
+      "invalid_values": "有一个或多个数值无效。",
+      "unknown": "发生未知错误，请查看 Home Assistant 日志。"
+    },
+    "abort": {
+      "entry_not_found": "找不到对应的配置条目。"
+    }
+  },
+  "exceptions": {
+    "cannot_boost": {
+      "message": "无法增强摄像机照明：{error}"
+    },
+    "cannot_restore": {
+      "message": "无法恢复智能补光模式：{error}"
+    }
+  }
+}

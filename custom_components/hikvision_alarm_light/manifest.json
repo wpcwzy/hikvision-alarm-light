@@ -1,0 +1,12 @@
+{
+  "domain": "hikvision_alarm_light",
+  "name": "Hikvision Alarm Light Link",
+  "codeowners": ["@wpcwzy"],
+  "config_flow": true,
+  "documentation": "https://github.com/wpcwzy/hikvision-alarm-light",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/wpcwzy/hikvision-alarm-light/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}
