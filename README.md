@@ -38,15 +38,16 @@
 
 ### HACS
 
-1. HACS → 集成 → 右上角 → 自定义存储库，添加本仓库 URL，类别选
-   “Integration”。
+1. HACS → 集成 → 右上角 → 自定义存储库，添加
+   `https://github.com/wpcwzy/hikvision-alarm-light`，类别选“Integration”。
 2. 搜索 **Hikvision Alarm Light Link** 安装。
 3. 重启 Home Assistant。
 
 ### 手动
 
 把 `custom_components/hikvision_alarm_light` 复制到 Home Assistant 配置目录的
-`custom_components/` 下，重启。
+`custom_components/` 下，重启。也可以直接下载 Release 中的
+`hikvision_alarm_light_custom_components.zip` 解压到配置目录。
 
 然后：设置 → 设备与服务 → 添加集成 → **Hikvision Alarm Light Link**。
 
