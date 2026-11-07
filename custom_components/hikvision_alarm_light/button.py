@@ -37,7 +37,7 @@ class TestBoostButton(AlarmLightEntity, ButtonEntity):
 class RestoreSmartLightButton(AlarmLightEntity, ButtonEntity):
     """Immediately restore the camera's smart supplement-light mode."""
 
-    _attr_name = "恢复智能补光"
+    _attr_name = "关闭灯光"
     _attr_icon = "mdi:lightbulb-off-outline"
 
     def __init__(self, entry: ConfigEntry, runtime: RuntimeData) -> None:

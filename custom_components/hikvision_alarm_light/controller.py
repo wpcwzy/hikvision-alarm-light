@@ -136,6 +136,7 @@ class LinkSnapshot:
     camera_mode: str | None
     boost_ends_at: datetime | None
     last_error: str | None
+    light_control: str | None
 
 
 class AlarmLightController:
@@ -172,6 +173,8 @@ class AlarmLightController:
         self._boost_ends_at: datetime | None = None
         self._last_error: str | None = None
         self._restore_xml: str | None = None
+        self._light_control: str | None = None
+        self._aux_supported = False
         self._restore_unsub: CALLBACK_TYPE | None = None
         self._guard_unsub: CALLBACK_TYPE | None = None
         self._running = False
@@ -207,16 +210,19 @@ class AlarmLightController:
             camera_mode=self._camera_mode,
             boost_ends_at=self._boost_ends_at,
             last_error=self._last_error,
+            light_control=self._light_control,
         )
 
     async def async_start(self) -> None:
         """Load persisted state, recover an interrupted boost, start the stream."""
+        await self._async_detect_light_control()
         stored = await self._store.async_load() or {}
         self._enabled = bool(stored.get("enabled", True))
 
         if stored.get("boost_active"):
             self._boost_active = True
-            self._restore_xml = stored.get("restore_xml") or build_smart_xml()
+            if self._light_control == "mode":
+                self._restore_xml = stored.get("restore_xml") or build_smart_xml()
             try:
                 await self._async_restore_light()
             except HikvisionError as err:
@@ -228,6 +234,22 @@ class AlarmLightController:
 
         self._reader.start()
         self._notify()
+
+    async def _async_detect_light_control(self) -> None:
+        """Prefer the camera's direct aux LIGHT switch; fall back to mode."""
+        try:
+            self._aux_supported = await self.hass.async_add_executor_job(
+                self.camera_client.get_aux_light_support,
+                self.settings.camera_channel,
+            )
+        except HikvisionError as err:
+            _LOGGER.warning(
+                "Could not query PTZ aux-light capability; falling back to mode: %s",
+                err,
+            )
+            self._aux_supported = False
+        self._light_control = "aux" if self._aux_supported else "mode"
+        _LOGGER.debug("Camera light control method: %s", self._light_control)
 
     async def async_stop(self) -> None:
         """Stop the stream and restore the light if it is currently boosted."""
@@ -324,6 +346,10 @@ class AlarmLightController:
         if self._boost_active:
             return
 
+        if self._light_control == "aux":
+            await self._async_boost_aux()
+            return
+
         state = await self.hass.async_add_executor_job(
             self.camera_client.get_supplement_light, self.settings.camera_channel
         )
@@ -384,7 +410,80 @@ class AlarmLightController:
             self.settings.brightness,
         )
 
+    async def _async_boost_aux(self) -> None:
+        """Use the same direct PTZ aux LIGHT command as the camera web UI."""
+        state = await self.hass.async_add_executor_job(
+            self.camera_client.get_supplement_light, self.settings.camera_channel
+        )
+        try:
+            await self.hass.async_add_executor_job(
+                self.camera_client.set_aux_light,
+                self.settings.camera_channel,
+                True,
+            )
+            new_state = await self.hass.async_add_executor_job(
+                self.camera_client.get_supplement_light,
+                self.settings.camera_channel,
+            )
+            if new_state.mode != state.mode:
+                _LOGGER.warning(
+                    "Aux LIGHT command unexpectedly changed supplement mode "
+                    "from %s to %s",
+                    state.mode,
+                    new_state.mode,
+                )
+        except HikvisionError:
+            try:
+                await self.hass.async_add_executor_job(
+                    self.camera_client.set_aux_light,
+                    self.settings.camera_channel,
+                    False,
+                )
+            except HikvisionError:
+                _LOGGER.exception("Could not roll back failed aux-light boost")
+            raise
+
+        self._boost_active = True
+        self._restore_xml = None
+        self._camera_mode = new_state.mode
+        self._boost_ends_at = dt_util.now() + timedelta(
+            seconds=self.settings.max_boost_seconds
+        )
+        self._last_error = None
+        await self._save_state()
+        self._notify()
+        _LOGGER.info(
+            "Boosted camera %s channel %s via PTZ aux LIGHT",
+            self.settings.camera_host,
+            self.settings.camera_channel,
+        )
+
     async def _async_restore_light(self) -> None:
+        if self._light_control == "aux":
+            await self.hass.async_add_executor_job(
+                self.camera_client.set_aux_light,
+                self.settings.camera_channel,
+                False,
+            )
+            state = await self.hass.async_add_executor_job(
+                self.camera_client.get_supplement_light,
+                self.settings.camera_channel,
+            )
+            self._boost_active = False
+            self._restore_xml = None
+            self._camera_mode = state.mode
+            self._boost_ends_at = None
+            self._last_error = None
+            self._cancel_restore()
+            self._cancel_guard()
+            await self._save_state()
+            self._notify()
+            _LOGGER.info(
+                "Switched off PTZ aux LIGHT; supplement mode remains %s",
+                state.mode,
+            )
+            return
+
         restore_xml = self._restore_xml or build_smart_xml()
         await self.hass.async_add_executor_job(
             self.camera_client.put_supplement_light,

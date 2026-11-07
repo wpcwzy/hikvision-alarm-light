@@ -26,6 +26,8 @@ DEVICE_INFO_PATH = "/ISAPI/System/deviceInfo"
 FIELD_DETECTION_TRIGGER_PATH = "/ISAPI/Event/triggers/fielddetection-{channel}"
 ALERT_STREAM_PATH = "/ISAPI/Event/notification/alertStream"
 SUPPLEMENT_LIGHT_PATH = "/ISAPI/Image/channels/{channel}/supplementLight"
+PTZ_CAPABILITIES_PATH = "/ISAPI/PTZCtrl/channels/{channel}/capabilities"
+PTZ_AUX_CONTROL_PATH = "/ISAPI/PTZCtrl/channels/{channel}/auxcontrols/{aux_id}"
 
 XML_CONTENT_TYPE = "application/xml; charset=UTF-8"
 BOOST_XML_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
@@ -45,6 +47,23 @@ SMART_XML = """<?xml version="1.0" encoding="UTF-8"?>
 </EventIntelligenceModeCfg>
 </SupplementLight>
 """
+
+
+def build_aux_light_xml(on: bool, aux_id: int = 1) -> str:
+    """Build the PTZ auxiliary-light command used by the camera web UI.
+
+    The camera's own web UI "灯光" button sends exactly this document to
+    ``/ISAPI/PTZCtrl/channels/<n>/auxcontrols/1``.  It directly switches the
+    white auxiliary light and deliberately does not change the supplement
+    light mode, so the smart IR/white-light policy is left untouched.
+
+    The body must not declare an XML namespace; Hikvision rejects it otherwise.
+    """
+    status = "on" if on else "off"
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f"<PTZAux><id>{aux_id}</id><type>LIGHT</type><status>{status}</status></PTZAux>"
+    )
 
 
 class HikvisionError(Exception):
@@ -444,6 +463,48 @@ class HikvisionIsapiClient:
                 "The NVR channel does not exist or does not support field detection."
             )
         return text
+
+    def get_aux_light_support(self, channel: int) -> bool:
+        """Return whether the PTZ channel exposes a LIGHT auxiliary output."""
+        text = self._request("GET", PTZ_CAPABILITIES_PATH.format(channel=channel))
+        root = _parse_xml(text)
+        if local_name(root.tag) == "ResponseStatus":
+            raise _supplement_error(root)
+        ptz_aux = _first_child(root, "PTZAuxType")
+        if ptz_aux is None:
+            return False
+        options = ptz_aux.attrib.get("opt", "") or ptz_aux.text or ""
+        return "LIGHT" in {item.strip().upper() for item in options.split(",")}
+
+    def set_aux_light(self, channel: int, on: bool, aux_id: int = 1) -> None:
+        """Switch the PTZ's auxiliary LIGHT output on or off.
+
+        This is the same direct command used by the camera web UI's light
+        button.  It intentionally leaves ``supplementLight`` unchanged.
+        """
+        response_text = self._request(
+            "PUT",
+            PTZ_AUX_CONTROL_PATH.format(channel=channel, aux_id=aux_id),
+            body=build_aux_light_xml(on, aux_id),
+        )
+        try:
+            root = ET.fromstring(response_text) if response_text.strip() else None
+        except ET.ParseError:
+            root = None
+        if root is None:
+            return
+        if local_name(root.tag) != "ResponseStatus":
+            raise HikvisionResponseError(
+                f"Unexpected aux-light response: <{local_name(root.tag)}>."
+            )
+        status_code, status_string, sub_status_code = _response_status(root)
+        if status_code != "1":
+            raise HikvisionResponseError(
+                status_string or "The camera rejected the aux-light command.",
+                status_code=status_code or None,
+                status_string=status_string or None,
+                sub_status_code=sub_status_code or None,
+            )
 
     def get_supplement_light(self, channel: int) -> SupplementLightState:
         return parse_supplement_light(

@@ -51,7 +51,7 @@
       "message": "Could not boost the camera light: {error}"
     },
     "cannot_restore": {
-      "message": "Could not restore the smart supplement-light mode: {error}"
+      "message": "Could not switch off the camera light: {error}"
     }
   }
 }

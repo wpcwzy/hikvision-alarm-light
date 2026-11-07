@@ -17,6 +17,7 @@ class FakeHikvisionClient:
     """Stateful replacement for HikvisionIsapiClient."""
 
     instances: ClassVar[list[FakeHikvisionClient]] = []
+    aux_supported: ClassVar[bool] = True
 
     def __init__(self, host: str, username: str, password: str, **kwargs: Any) -> None:
         self.host = host
@@ -28,6 +29,7 @@ class FakeHikvisionClient:
         self.mode = "eventIntelligence"
         self.brightness = 100
         self.raw_xml = build_smart_xml()
+        self.aux_on = False
         FakeHikvisionClient.instances.append(self)
 
     @classmethod
@@ -49,6 +51,12 @@ class FakeHikvisionClient:
 
     def get_linkage_state(self, channel: int) -> str:
         return "<EventTrigger><id>fielddetection-2</id></EventTrigger>"
+
+    def get_aux_light_support(self, channel: int) -> bool:
+        return self.aux_supported
+
+    def set_aux_light(self, channel: int, on: bool, aux_id: int = 1) -> None:
+        self.aux_on = on
 
     def get_supplement_light(self, channel: int) -> SupplementLightState:
         if self.mode == "colorVuWhiteLight":

@@ -51,7 +51,7 @@
       "message": "无法增强摄像机照明：{error}"
     },
     "cannot_restore": {
-      "message": "无法恢复智能补光模式：{error}"
+      "message": "无法关闭摄像机灯光：{error}"
     }
   }
 }

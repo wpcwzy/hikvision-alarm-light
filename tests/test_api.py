@@ -118,3 +118,17 @@ def test_is_night() -> None:
     assert is_night(datetime(2026, 11, 7, 2, 0, tzinfo=UTC), start, end)
     assert not is_night(datetime(2026, 11, 7, 12, 0, tzinfo=UTC), start, end)
     assert is_night(datetime(2026, 11, 7, 12, 0, tzinfo=UTC), time(0, 0), time(23, 59))
+
+
+def test_build_aux_light_xml() -> None:
+    from custom_components.hikvision_alarm_light.api import build_aux_light_xml
+
+    on = build_aux_light_xml(True)
+    off = build_aux_light_xml(False)
+    assert "<PTZAux>" in on
+    assert "<id>1</id>" in on
+    assert "<type>LIGHT</type>" in on
+    assert "<status>on</status>" in on
+    assert "<status>off</status>" in off
+    # Hikvision rejects a namespace on this body.
+    assert "xmlns" not in on

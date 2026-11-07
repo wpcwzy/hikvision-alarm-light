@@ -1,8 +1,11 @@
 # 海康 NVR 区域入侵 → 球机白光补光（Home Assistant）
 
-当 NVR 的指定通道在夜间发生“区域入侵 / 周界防范”报警时，自动把指定海康
-摄像机/球机的补光灯切换到**白光灯、亮度最大**，报警结束 **2 分钟**后恢复为
-**智能补光**。
+当 NVR 的指定通道在夜间发生“区域入侵 / 周界防范”报警时，自动打开指定
+海康摄像机/球机的**专用照明灯（与摄像机 Web UI 的“灯光”按钮相同的接口）**，
+报警结束 **2 分钟**后关闭该照明灯。
+
+整个过程中**不会修改补光模式**：智能补光、红外灯及其亮度策略保持原样，因此
+关闭照明灯后不会出现“红外灯也被关掉”的问题。
 
 本项目是一个 Home Assistant 自定义集成，直接在现有 Home Assistant 容器内运行，
 无需额外维护一个 Docker 容器。它适合“摄像机一直侦测录像，但只有夜间报警时才
@@ -13,13 +16,16 @@
 - 订阅 NVR 的 ISAPI 报警事件流（`/ISAPI/Event/notification/alertStream`）。
 - 只处理指定 NVR 通道的 `fielddetection`（区域入侵）事件。
 - 仅在可配置的夜间时段（默认 `18:00–06:00`）自动触发。
-- 事件 `active` 时：调用摄像机
-  `/ISAPI/Image/channels/<n>/supplementLight`，切换到
-  `colorVuWhiteLight` 模式，亮度 100。
-- 事件 `inactive` 后保持 2 分钟（可配置），再恢复为 `eventIntelligence`
-  （智能补光）或触发前保存的模式。
+- 优先使用摄像机 Web UI“灯光”按钮同一个接口：
+  `PUT /ISAPI/PTZCtrl/channels/<n>/auxcontrols/1`，直接打开/关闭
+  PTZ 的 `LIGHT` 辅助灯。
+- 不修改 `/ISAPI/Image/channels/<n>/supplementLight`，因此智能补光模式、
+  红外灯亮度、IR-CUT 策略都不会被改动。
+- 事件 `inactive` 后保持 2 分钟（可配置），然后关闭 aux 灯光。
 - 安全上限（默认 300 秒）：即使没有收到 `inactive`，也不会永久点亮。
-- 如果 HA 在补光期间重启，会自动恢复智能补光，避免灯一直亮着。
+- 如果 HA 在照明期间重启，会自动关闭 aux 灯光，避免灯一直亮着。
+- 对于不支持 PTZ aux LIGHT 的摄像机，自动回退到 `supplementLight` 模式切换
+  （兼容旧设备；本机使用 aux LIGHT）。
 - 支持两个 HTTP Digest 设备（NVR 与摄像机），可分别配置端口/HTTPS。
 - 提供实体：区域入侵报警、照明增强中、事件流连接、上次入侵、测试补光、
   恢复智能补光、自动联动开关。
@@ -30,8 +36,9 @@
 - NVR：Hikvision DS-7808N-Z2/X(B)，V4.85.010
 - 报警通道：NVR 2 号通道（后院）
 - 补光设备：DS-2DC7X144DW-DE 球机，V5.8.1
-- 补光灯接口：`/ISAPI/Image/channels/1/supplementLight`
-- 模式：`eventIntelligence`（智能补光）↔ `colorVuWhiteLight`（白光灯）
+- 直接灯光接口：`/ISAPI/PTZCtrl/channels/1/auxcontrols/1`
+  （与摄像机 Web UI 的“灯光”按钮相同）
+- 补光配置：`eventIntelligence`，白光灯亮度 100，控制前后保持不变
 - Home Assistant 2026.8.3（实际部署），2025.1.4（自动化测试）
 
 ## 安装
@@ -87,10 +94,10 @@
 - `binary_sensor.*_bao_jing_shi_jian_liu`：报警事件流是否连接
 - `sensor.*_shang_ci_ru_qin`：上次入侵时间
 - `button.*_ce_shi_bu_guang`：立即测试补光，保持配置的 hold 时间后自动恢复
-- `button.*_hui_fu_zhi_neng_bu_guang`：立即恢复智能补光
+- `button.*_guan_bi_deng_guang`：立即关闭增强灯光（智能补光模式保持不变）
 - `switch.*_zi_dong_lian_dong`：暂停/启用自动联动
 
-建议先用“测试补光”按钮在白天验证：约 2 分钟后它会自动恢复智能补光。
+建议先用“测试补光”按钮在白天验证：约 2 分钟后它会自动关闭灯光，智能补光模式保持不变。
 也可以查看 NVR/摄像机的 ISAPI 状态确认。
 
 ## 工作原理
@@ -113,25 +120,35 @@ GET /ISAPI/Event/notification/alertStream
 
 `inactive` 事件触发“保持 2 分钟”的恢复计时器。
 
-### 补光控制
+### 灯光控制
 
-当前摄像机支持：
+摄像机 Web UI 的“灯光”按钮并不是切换补光模式，而是发送一条 PTZ 辅助灯光
+命令。集成直接复用这个接口：
 
 ```text
-eventIntelligence,colorVuWhiteLight,irLight,close
+PUT /ISAPI/PTZCtrl/channels/1/auxcontrols/1
+Content-Type: application/xml
+
+<?xml version="1.0" encoding="UTF-8"?>
+<PTZAux><id>1</id><type>LIGHT</type><status>on</status></PTZAux>
 ```
 
-触发时 PUT：
+关闭时 `status` 改为 `off`。注意：
 
-```xml
-<SupplementLight>
-  <supplementLightMode>colorVuWhiteLight</supplementLightMode>
-  <whiteLightBrightness>100</whiteLightBrightness>
-</SupplementLight>
-```
+- 该 XML **不能带 xmlns 命名空间**，否则部分固件会拒绝（与摄像机 Web UI
+  发送的请求一致）。
+- 该命令只控制 PTZ 的辅助 `LIGHT` 输出，不修改
+  `/ISAPI/Image/channels/1/supplementLight`。
+- 触发前后摄像机始终保持：
+  `supplementLightMode=eventIntelligence`，
+  `whiteLightBrightness=100`，`irLightBrightness=100`。
+- 因此关闭灯光后智能补光和红外灯仍按原有策略工作，不会因为“白光灯关闭”
+  而把红外灯一起关掉。
 
-恢复时写回触发前保存的智能补光 XML（正常情况为
-`eventIntelligence + EventIntelligenceModeCfg`）。
+集成启动时会读取
+`/ISAPI/PTZCtrl/channels/1/capabilities`，检查
+`PTZAuxType` 是否包含 `LIGHT`。若没有该能力，则回退到原来的
+`supplementLight` 模式切换方式。
 
 ### 夜间判断
 
@@ -141,10 +158,11 @@ eventIntelligence,colorVuWhiteLight,irLight,close
 ## 安全与恢复
 
 - 报警结束时只恢复补光模式，不改变摄像机侦测、录像等设置。
-- 如果 HA 重启时补光仍在进行，集成读取持久化状态并尝试恢复智能补光。
-- 如果恢复失败，会每 30 秒重试，并保留 diagnostic 错误信息。
+- 如果 HA 重启时灯光仍在进行，集成读取持久化状态并发送 aux LIGHT off。
+- 如果关闭命令失败，会每 30 秒重试，并保留 diagnostic 错误信息。
 - 安全上限防止因事件流中断导致灯永久点亮。
-- 集成卸载时会尝试恢复智能补光。
+- 集成卸载时会尝试关闭 aux 灯光。
+- 使用 aux 直控时不会触碰补光模式；只有不支持 aux 的摄像机才回退到模式切换。
 
 ## 故障排查
 
@@ -153,17 +171,22 @@ eventIntelligence,colorVuWhiteLight,irLight,close
 | 事件流未连接 | 检查 NVR 地址/凭据；确认账号可访问 ISAPI；查看实体属性 `stream_error` |
 | 摄像机补光接口返回 404 | 该型号可能没有 `/ISAPI/Image/channels/<ch>/supplementLight`；在浏览器/curl 验证 |
 | 报警时灯不亮 | 检查夜间时段、自动联动开关、NVR 通道是否真的产生 `fielddetection` 事件 |
-| 灯一直亮 | 使用“恢复智能补光”按钮；检查安全上限；重启 HA 时会自动恢复 |
+| 灯一直亮 | 使用“关闭灯光”按钮；检查安全上限；重启 HA 时会自动关灯 |
 | 手机收不到通知 | 本集成只控制补光灯；NVR 报警推送仍由海康 Hik-Connect/上传中心负责 |
 
-### 手动验证补光接口
+### 手动验证 aux 灯光接口
 
 ```bash
 export CAMERA_HOST=192.168.1.11
 export CAMERA_USERNAME=admin
 export CAMERA_PASSWORD='...'
 curl --digest -u "$CAMERA_USERNAME:$CAMERA_PASSWORD" \
-  "http://$CAMERA_HOST/ISAPI/Image/channels/1/supplementLight"
+  "http://$CAMERA_HOST/ISAPI/PTZCtrl/channels/1/capabilities"
+
+curl --digest -u "$CAMERA_USERNAME:$CAMERA_PASSWORD" \
+  -X PUT -H "Content-Type: application/xml" \
+  --data-binary '<?xml version="1.0" encoding="UTF-8"?><PTZAux><id>1</id><type>LIGHT</type><status>on</status></PTZAux>' \
+  "http://$CAMERA_HOST/ISAPI/PTZCtrl/channels/1/auxcontrols/1"
 ```
 
 ## 开发测试

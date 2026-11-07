@@ -125,13 +125,17 @@ async def test_alarm_boosts_light_then_restores(hass: HomeAssistant) -> None:
 
     reader.emit_event(event("active"))
     await hass.async_block_till_done()
-    assert camera.mode == "colorVuWhiteLight"
+    assert camera.aux_on is True
+    # The direct aux LIGHT command must not change the supplement mode,
+    # otherwise IR behaviour could be disturbed.
+    assert camera.mode == "eventIntelligence"
     assert hass.states.get(boost_id).state == "on"
 
     reader.emit_event(event("inactive"))
     await hass.async_block_till_done()
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=130))
     await hass.async_block_till_done()
+    assert camera.aux_on is False
     assert camera.mode == "eventIntelligence"
     assert hass.states.get(boost_id).state == "off"
 
@@ -150,12 +154,14 @@ async def test_button_and_switch(hass: HomeAssistant) -> None:
         "button", "press", {"entity_id": test_button}, blocking=True
     )
     await hass.async_block_till_done()
-    assert camera.mode == "colorVuWhiteLight"
+    assert camera.aux_on is True
+    assert camera.mode == "eventIntelligence"
 
     await hass.services.async_call(
         "button", "press", {"entity_id": restore_button}, blocking=True
     )
     await hass.async_block_till_done()
+    assert camera.aux_on is False
     assert camera.mode == "eventIntelligence"
 
     await hass.services.async_call(
@@ -163,5 +169,24 @@ async def test_button_and_switch(hass: HomeAssistant) -> None:
     )
     await hass.async_block_till_done()
     reader.emit_event(event("active"))
+    await hass.async_block_till_done()
+    assert camera.mode == "eventIntelligence"
+
+
+async def test_mode_fallback_when_aux_light_is_missing(
+    hass: HomeAssistant, monkeypatch
+) -> None:
+    """Cameras without a PTZ LIGHT output fall back to supplement mode."""
+    monkeypatch.setattr(FakeHikvisionClient, "aux_supported", False)
+    _entry, camera, reader = await setup_entry(hass)
+
+    reader.emit_event(event("active"))
+    await hass.async_block_till_done()
+    assert camera.aux_on is False
+    assert camera.mode == "colorVuWhiteLight"
+
+    reader.emit_event(event("inactive"))
+    await hass.async_block_till_done()
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=130))
     await hass.async_block_till_done()
     assert camera.mode == "eventIntelligence"

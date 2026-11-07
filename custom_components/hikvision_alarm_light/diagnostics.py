@@ -30,6 +30,7 @@ def _snapshot_dict(runtime: RuntimeData) -> dict[str, Any]:
         "camera_mode": data.camera_mode,
         "boost_ends_at": data.boost_ends_at.isoformat() if data.boost_ends_at else None,
         "last_error": data.last_error,
+        "light_control": data.light_control,
     }
 
 
