@@ -1,5 +1,7 @@
 {
   "name": "Hikvision Alarm Light Link",
   "render_readme": true,
-  "homeassistant": "2024.6.0"
+  "homeassistant": "2024.6.0",
+  "zip_release": true,
+  "filename": "hikvision_alarm_light_manual_install.zip"
 }
