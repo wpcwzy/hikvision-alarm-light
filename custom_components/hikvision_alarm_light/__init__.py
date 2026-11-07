@@ -16,6 +16,12 @@ from .api import (
     HikvisionIsapiClient,
     HikvisionResponseError,
 )
+from .const import (
+    CONF_TRIGGER_CHANNEL,
+    CONF_TRIGGER_CHANNELS,
+    CONFIG_ENTRY_VERSION,
+    DEFAULT_TRIGGER_CHANNEL,
+)
 from .controller import AlarmLightController, LinkSettings
 from .coordinator import AlarmLightCoordinator
 from .models import RuntimeData
@@ -28,6 +34,35 @@ PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.SWITCH,
 ]
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate a version 1 entry from a single channel to a channel list."""
+    if entry.version > CONFIG_ENTRY_VERSION:
+        _LOGGER.error(
+            "Cannot migrate entry %s from version %s to %s",
+            entry.entry_id,
+            entry.version,
+            CONFIG_ENTRY_VERSION,
+        )
+        return False
+
+    if entry.version < CONFIG_ENTRY_VERSION:
+        data = dict(entry.data)
+        if CONF_TRIGGER_CHANNELS not in data:
+            legacy_channel = data.pop(CONF_TRIGGER_CHANNEL, DEFAULT_TRIGGER_CHANNEL)
+            data[CONF_TRIGGER_CHANNELS] = [int(legacy_channel)]
+        hass.config_entries.async_update_entry(
+            entry, data=data, version=CONFIG_ENTRY_VERSION
+        )
+        _LOGGER.info(
+            "Migrated %s to config entry version %s, trigger channels: %s",
+            entry.title,
+            CONFIG_ENTRY_VERSION,
+            data[CONF_TRIGGER_CHANNELS],
+        )
+
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -54,9 +89,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     try:
         nvr_device = await hass.async_add_executor_job(nvr_client.get_device_info)
-        await hass.async_add_executor_job(
-            nvr_client.get_linkage_state, settings.trigger_channel
-        )
+        for trigger_channel in settings.trigger_channels:
+            await hass.async_add_executor_job(
+                nvr_client.get_linkage_state, trigger_channel
+            )
         camera_device = await hass.async_add_executor_job(camera_client.get_device_info)
         await hass.async_add_executor_job(
             camera_client.get_supplement_light, settings.camera_channel

@@ -3,11 +3,35 @@
     "step": {
       "user": {
         "title": "连接报警 NVR",
-        "description": "请输入产生区域入侵报警的 NVR 地址、凭据和需要监听的通道。凭据只保存在 Home Assistant 中，并仅发送给设备。"
+        "description": "请输入产生区域入侵报警的 NVR 地址、凭据和需要监听的通道。多个通道请用英文逗号分隔（例如 2,6），其中任一通道报警都会点亮灯光。凭据只保存在 Home Assistant 中，并仅发送给设备。",
+        "data": {
+          "nvr_host": "NVR 地址",
+          "nvr_port": "端口",
+          "nvr_use_ssl": "使用 HTTPS",
+          "nvr_verify_ssl": "校验 TLS 证书",
+          "nvr_username": "用户名",
+          "nvr_password": "密码",
+          "trigger_channels": "报警通道（逗号分隔）"
+        }
       },
       "camera": {
         "title": "连接补光摄像机",
-        "description": "NVR {nvr_host}，报警通道 {trigger_channel}。请输入需要增强照明的球机/摄像机信息，以及夜间时段和保持时间。"
+        "description": "NVR {nvr_host}，报警通道 {trigger_channels}。请输入需要增强照明的球机/摄像机信息，以及夜间时段和保持时间。",
+        "data": {
+          "camera_host": "摄像机地址",
+          "camera_port": "端口",
+          "camera_use_ssl": "使用 HTTPS",
+          "camera_verify_ssl": "校验 TLS 证书",
+          "camera_username": "用户名",
+          "camera_password": "密码",
+          "camera_channel": "补光通道",
+          "name": "名称",
+          "night_start": "夜间开始（HH:MM）",
+          "night_end": "夜间结束（HH:MM）",
+          "hold_seconds": "报警结束后保持（秒）",
+          "max_boost_seconds": "安全上限（秒）",
+          "brightness": "亮度（%）"
+        }
       }
     },
     "error": {
@@ -16,6 +40,7 @@
       "cannot_connect": "无法连接设备。",
       "nvr_invalid": "NVR 通道不支持区域入侵侦测，或账号权限不足。",
       "camera_invalid": "摄像机不支持补光灯配置。",
+      "invalid_trigger_channels": "报警通道必须是 1-64 的数字，例如 2,6。",
       "invalid_night_window": "夜间开始/结束必须是有效的 HH:MM 时间，并且不能相同。",
       "invalid_hold_seconds": "报警结束后保持时间必须在 10 到 3600 秒之间。",
       "invalid_max_boost": "安全上限必须在 60 到 3600 秒之间。",
@@ -31,10 +56,25 @@
     "step": {
       "init": {
         "title": "报警补光选项",
-        "description": "NVR {nvr_host} 通道 {nvr_channel} → 摄像机 {camera_host} 通道 {camera_channel}。"
+        "description": "NVR {nvr_host} 通道 {nvr_channels} → 摄像机 {camera_host} 通道 {camera_channel}。预置点填 0 表示跳过该步骤。",
+        "data": {
+          "name": "名称",
+          "trigger_channels": "报警通道（逗号分隔）",
+          "night_start": "夜间开始（HH:MM）",
+          "night_end": "夜间结束（HH:MM）",
+          "hold_seconds": "报警结束后保持（秒）",
+          "max_boost_seconds": "安全上限（秒）",
+          "brightness": "亮度（%）",
+          "preset_light_on": "亮灯时调用的预置点（0 = 关闭）",
+          "preset_day": "白天预置点（0 = 关闭）",
+          "preset_night": "黑夜预置点（0 = 关闭）",
+          "preset_auto": "日夜自动预置点（0 = 关闭）"
+        }
       }
     },
     "error": {
+      "invalid_trigger_channels": "报警通道必须是 1-64 的数字，例如 2,6。",
+      "invalid_presets": "预置点必须在 0 到 999 之间（0 表示关闭该步骤）。",
       "invalid_night_window": "夜间开始/结束必须是有效的 HH:MM 时间，并且不能相同。",
       "invalid_hold_seconds": "报警结束后保持时间必须在 10 到 3600 秒之间。",
       "invalid_max_boost": "安全上限必须在 60 到 3600 秒之间。",

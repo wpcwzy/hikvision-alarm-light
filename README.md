@@ -1,11 +1,13 @@
 # 海康 NVR 区域入侵 → 球机白光补光（Home Assistant）
 
-当 NVR 的指定通道在夜间发生“区域入侵 / 周界防范”报警时，自动打开指定
-海康摄像机/球机的**专用照明灯（与摄像机 Web UI 的“灯光”按钮相同的接口）**，
-报警结束 **5 分钟**后关闭该照明灯。
+当 NVR 的**任意一个指定通道**（可配置多个，例如 2 和 6）在夜间发生
+“区域入侵 / 周界防范”报警时，自动打开指定海康摄像机/球机的
+**专用照明灯（与摄像机 Web UI 的“灯光”按钮相同的接口）**，并调用 PTZ
+预置点让球机切换到白天（彩色）画面。报警结束 **5 分钟**后关闭照明灯，随后
+按当前白天/黑夜调用对应预置点，最后调用“日夜自动模式”预置点恢复自动切换。
 
-整个过程中**不会修改补光模式**：智能补光、红外灯及其亮度策略保持原样，因此
-关闭照明灯后不会出现“红外灯也被关掉”的问题。
+灯光控制过程中**不会修改补光模式**：智能补光、红外灯及其亮度策略保持原样，
+因此关闭照明灯后不会出现“红外灯也被关掉”的问题。
 
 本项目是一个 Home Assistant 自定义集成，直接在现有 Home Assistant 容器内运行，
 无需额外维护一个 Docker 容器。它适合“摄像机一直侦测录像，但只有夜间报警时才
@@ -14,14 +16,19 @@
 ## 功能
 
 - 订阅 NVR 的 ISAPI 报警事件流（`/ISAPI/Event/notification/alertStream`）。
-- 只处理指定 NVR 通道的 `fielddetection`（区域入侵）事件。
+- 支持配置**多个 NVR 通道**（例如 `2,6`），任一通道的 `fielddetection`
+  （区域入侵）报警都会触发同一盏灯。
 - 仅在可配置的夜间时段（默认 `18:00–06:00`）自动触发。
+- 亮灯后自动调用“亮灯预置点”（默认 `39`）把球机切到白天/彩色画面。
 - 优先使用摄像机 Web UI“灯光”按钮同一个接口：
   `PUT /ISAPI/PTZCtrl/channels/<n>/auxcontrols/1`，直接打开/关闭
   PTZ 的 `LIGHT` 辅助灯。
 - 不修改 `/ISAPI/Image/channels/<n>/supplementLight`，因此智能补光模式、
   红外灯亮度、IR-CUT 策略都不会被改动。
 - 事件 `inactive` 后保持 5 分钟（可配置），然后关闭 aux 灯光。
+- 灭灯后按当前时间先调用“白天预置点”（默认 `39`）或“黑夜预置点”
+  （默认 `40`），再调用“日夜自动预置点”（默认 `46`），恢复摄像机自动
+  日夜切换。预置点均可配置，填 `0` 可跳过该步骤。
 - 安全上限（默认 15 分钟）：即使没有收到 `inactive`，也不会永久点亮。
 - 如果 HA 在照明期间重启，会自动关闭 aux 灯光，避免灯一直亮着。
 - 对于不支持 PTZ aux LIGHT 的摄像机，自动回退到 `supplementLight` 模式切换
@@ -34,10 +41,12 @@
 ## 已验证环境
 
 - NVR：Hikvision DS-7808N-Z2/X(B)，V4.85.010
-- 报警通道：NVR 2 号通道（后院）
+- 报警通道：NVR 2 号通道（后院固定摄像机）和 6 号通道（后院云台），
+  任一通道报警都会点亮同一盏灯
 - 补光设备：DS-2DC7X144DW-DE 球机，V5.8.1
 - 直接灯光接口：`/ISAPI/PTZCtrl/channels/1/auxcontrols/1`
   （与摄像机 Web UI 的“灯光”按钮相同）
+- 日夜预置点：39 白天模式、40 黑夜模式、46 日夜自动模式
 - 补光配置：`eventIntelligence`，白光灯亮度 100，控制前后保持不变
 - Home Assistant 2026.8.3（实际部署），2025.1.4（自动化测试）
 
@@ -69,7 +78,7 @@
 | 使用 HTTPS | 否 | 按 NVR 实际配置 |
 | 校验 TLS 证书 | 否 | 海康自签名证书一般关闭 |
 | 用户名/密码 | `admin` / — | 需要远程配置权限 |
-| 报警通道 | `2` | 监听该 NVR 通道的 `fielddetection` 事件 |
+| 报警通道 | `2, 6` | 逗号分隔；监听这些 NVR 通道的 `fielddetection` 事件，任一通道报警都会触发 |
 
 ### 第二步：补光摄像机
 
@@ -82,8 +91,13 @@
 | 报警结束保持 | `300` 秒（5 分钟） | inactive 后再保持多久 |
 | 安全上限 | `900` 秒（15 分钟） | 没有 inactive 时的兜底 |
 | 亮度 | `100` | 白光灯最大亮度 |
+| 亮灯预置点 | `39` | 亮灯后调用，强制白天/彩色画面；`0` 表示不调用 |
+| 白天预置点 | `39` | 灭灯时若为白天，先调用该预置点 |
+| 黑夜预置点 | `40` | 灭灯时若为夜间，先调用该预置点 |
+| 日夜自动预置点 | `46` | 灭灯时最后调用，恢复自动日夜切换 |
 
-一个配置条目对应一条“NVR 通道 → 摄像机通道”联动。
+一个配置条目对应一条“NVR 通道（可多个）→ 摄像机通道”联动。预置点在
+“配置 → 选项”中可修改，`0` 表示跳过对应步骤。
 
 ## 实体
 
@@ -118,7 +132,9 @@ GET /ISAPI/Event/notification/alertStream
 <channelID>2</channelID>
 ```
 
-`inactive` 事件触发“保持 5 分钟”的恢复计时器。
+只有当 `channelID` 在配置的报警通道列表（例如 `[2, 6]`）中时才会触发；
+任意一个通道的 `active` 事件都会点亮同一盏灯，`inactive` 事件触发
+“保持 5 分钟”的恢复计时器。
 
 ### 灯光控制
 
@@ -150,6 +166,30 @@ Content-Type: application/xml
 `PTZAuxType` 是否包含 `LIGHT`。若没有该能力，则回退到原来的
 `supplementLight` 模式切换方式。
 
+### 预置点联动（日夜模式）
+
+海康球机可以把“白天/黑夜/日夜自动”等画面策略保存在预置点里。为了让白光灯
+亮起时画面保持彩色（而不是黑白红外画面），集成在灯光控制前后调用预置点：
+
+```text
+PUT /ISAPI/PTZCtrl/channels/1/presets/39/goto
+Content-Type: application/xml
+
+<?xml version="1.0" encoding="UTF-8"?>
+<PTZPreset xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>39</id>
+</PTZPreset>
+```
+
+- **亮灯后**：调用“亮灯预置点”（默认 `39`，白天/彩色模式）。
+- **灭灯后**：先根据当前时间判断白天/黑夜，调用“白天预置点”（默认 `39`）
+  或“黑夜预置点”（默认 `40`），再调用“日夜自动预置点”（默认 `46`），
+  让摄像机恢复自动日夜切换。
+- 预置点失败只记录警告日志，不会影响灯光开关；在“选项”里可以修改编号，
+  填 `0` 表示跳过。
+- 预置点只在摄像机支持 PTZ 辅助 `LIGHT` 时使用；回退到
+  `supplementLight` 模式的旧设备不会调用预置点。
+
 ### 夜间判断
 
 使用 Home Assistant 本地时区和配置的时间窗口。默认 `18:00–06:00`，与摄像机
@@ -157,8 +197,9 @@ Content-Type: application/xml
 
 ## 安全与恢复
 
-- 报警结束时只恢复补光模式，不改变摄像机侦测、录像等设置。
-- 如果 HA 重启时灯光仍在进行，集成读取持久化状态并发送 aux LIGHT off。
+- 报警结束时只关闭灯光并恢复日夜模式，不改变摄像机侦测、录像等设置。
+- 如果 HA 重启时灯光仍在进行，集成读取持久化状态并发送 aux LIGHT off，
+  并按白天/黑夜恢复预置点。
 - 如果关闭命令失败，会每 30 秒重试，并保留 diagnostic 错误信息。
 - 安全上限防止因事件流中断导致灯永久点亮。
 - 集成卸载时会尝试关闭 aux 灯光。
@@ -170,8 +211,10 @@ Content-Type: application/xml
 | --- | --- |
 | 事件流未连接 | 检查 NVR 地址/凭据；确认账号可访问 ISAPI；查看实体属性 `stream_error` |
 | 摄像机补光接口返回 404 | 该型号可能没有 `/ISAPI/Image/channels/<ch>/supplementLight`；在浏览器/curl 验证 |
-| 报警时灯不亮 | 检查夜间时段、自动联动开关、NVR 通道是否真的产生 `fielddetection` 事件 |
+| 报警时灯不亮 | 检查夜间时段、自动联动开关、报警通道列表（选项里是否包含该通道）、NVR 通道是否真的产生 `fielddetection` 事件 |
 | 灯一直亮 | 使用“关闭灯光”按钮；检查安全上限；重启 HA 时会自动关灯 |
+| 灯亮但画面仍是黑白/红外 | 检查“亮灯预置点”是否配置正确（默认为 39 白天模式），可先用 curl 手动调用验证 |
+| 灭灯后没回到自动日夜 | 检查“日夜自动预置点”（默认 46）及“白天/黑夜预置点”是否存在于球机中 |
 | 手机收不到通知 | 本集成只控制补光灯；NVR 报警推送仍由海康 Hik-Connect/上传中心负责 |
 
 ### 手动验证 aux 灯光接口
@@ -189,6 +232,20 @@ curl --digest -u "$CAMERA_USERNAME:$CAMERA_PASSWORD" \
   "http://$CAMERA_HOST/ISAPI/PTZCtrl/channels/1/auxcontrols/1"
 ```
 
+### 手动验证日夜预置点
+
+先读取预置点列表，确认 39/40/46 的名称；再手动调用某个预置点：
+
+```bash
+curl --digest -u "$CAMERA_USERNAME:$CAMERA_PASSWORD" \
+  "http://$CAMERA_HOST/ISAPI/PTZCtrl/channels/1/presets"
+
+curl --digest -u "$CAMERA_USERNAME:$CAMERA_PASSWORD" \
+  -X PUT -H "Content-Type: application/xml" \
+  --data-binary '<?xml version="1.0" encoding="UTF-8"?><PTZPreset xmlns="http://www.hikvision.com/ver20/XMLSchema"><id>39</id></PTZPreset>' \
+  "http://$CAMERA_HOST/ISAPI/PTZCtrl/channels/1/presets/39/goto"
+```
+
 ## 开发测试
 
 ```bash
@@ -197,8 +254,23 @@ python3 -m venv .venv
 .venv/bin/python -m pytest -q
 ```
 
-纯函数测试覆盖事件解析、multipart 分帧、补光 XML 与夜间判断；Home Assistant
-测试覆盖配置流、实体创建、报警触发、inactive 后自动恢复、按钮和自动联动开关。
+纯函数测试覆盖事件解析、multipart 分帧、补光/预置点 XML 与夜间判断；
+Home Assistant 测试覆盖配置流、选项流、旧配置迁移、多通道任一触发、实体创建、
+亮灯/灭灯预置点调用、inactive 后自动恢复、按钮和自动联动开关。
+
+### 打包发布
+
+```bash
+.venv/bin/python scripts/build_release.py --version 1.2.0
+git archive --format=zip --prefix=hikvision-alarm-light-1.2.0/ \
+  -o dist/hikvision-alarm-light-1.2.0.zip v1.2.0
+gh release create v1.2.0 --title "v1.2.0" --notes-file <说明文件> \
+  dist/hikvision_alarm_light_manual_install.zip \
+  dist/hikvision_alarm_light_custom_components.zip
+```
+
+`hacs.json` 中 `zip_release` 使用
+`hikvision_alarm_light_manual_install.zip` 作为 HACS 安装包。
 
 ## 许可
 

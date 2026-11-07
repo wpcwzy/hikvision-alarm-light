@@ -30,6 +30,7 @@ class FakeHikvisionClient:
         self.brightness = 100
         self.raw_xml = build_smart_xml()
         self.aux_on = False
+        self.presets: list[int] = []
         FakeHikvisionClient.instances.append(self)
 
     @classmethod
@@ -57,6 +58,9 @@ class FakeHikvisionClient:
 
     def set_aux_light(self, channel: int, on: bool, aux_id: int = 1) -> None:
         self.aux_on = on
+
+    def goto_preset(self, channel: int, preset_id: int) -> None:
+        self.presets.append(preset_id)
 
     def get_supplement_light(self, channel: int) -> SupplementLightState:
         if self.mode == "colorVuWhiteLight":

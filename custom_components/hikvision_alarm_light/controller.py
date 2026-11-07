@@ -41,9 +41,21 @@ from .const import (
     CONF_NVR_USE_SSL,
     CONF_NVR_USERNAME,
     CONF_NVR_VERIFY_SSL,
+    CONF_PRESET_AUTO,
+    CONF_PRESET_DAY,
+    CONF_PRESET_LIGHT_ON,
+    CONF_PRESET_NIGHT,
     CONF_TRIGGER_CHANNEL,
+    CONF_TRIGGER_CHANNELS,
+    DEFAULT_PRESET_AUTO,
+    DEFAULT_PRESET_DAY,
+    DEFAULT_PRESET_LIGHT_ON,
+    DEFAULT_PRESET_NIGHT,
+    DEFAULT_TRIGGER_CHANNEL,
     DOMAIN,
     EVENT_TYPE_FIELDDETECTION,
+    MAX_PRESET_ID,
+    MIN_PRESET_ID,
     STORE_VERSION,
 )
 
@@ -61,7 +73,7 @@ class LinkSettings:
     nvr_verify_ssl: bool
     nvr_username: str
     nvr_password: str
-    trigger_channel: int
+    trigger_channels: tuple[int, ...]
     camera_host: str
     camera_port: int
     camera_use_ssl: bool
@@ -74,6 +86,10 @@ class LinkSettings:
     hold_seconds: int
     max_boost_seconds: int
     brightness: int
+    preset_light_on: int
+    preset_day: int
+    preset_night: int
+    preset_auto: int
 
     @classmethod
     def from_entry(cls, data: dict) -> LinkSettings:
@@ -85,7 +101,9 @@ class LinkSettings:
             nvr_verify_ssl=bool(data[CONF_NVR_VERIFY_SSL]),
             nvr_username=str(data[CONF_NVR_USERNAME]),
             nvr_password=str(data[CONF_NVR_PASSWORD]),
-            trigger_channel=int(data[CONF_TRIGGER_CHANNEL]),
+            trigger_channels=normalise_trigger_channels(
+                data.get(CONF_TRIGGER_CHANNELS, data.get(CONF_TRIGGER_CHANNEL))
+            ),
             camera_host=str(data[CONF_CAMERA_HOST]),
             camera_port=int(data[CONF_CAMERA_PORT]),
             camera_use_ssl=bool(data[CONF_CAMERA_USE_SSL]),
@@ -98,7 +116,51 @@ class LinkSettings:
             hold_seconds=int(data[CONF_HOLD_SECONDS]),
             max_boost_seconds=int(data[CONF_MAX_BOOST_SECONDS]),
             brightness=int(data[CONF_BRIGHTNESS]),
+            preset_light_on=_parse_preset(
+                data.get(CONF_PRESET_LIGHT_ON), DEFAULT_PRESET_LIGHT_ON
+            ),
+            preset_day=_parse_preset(data.get(CONF_PRESET_DAY), DEFAULT_PRESET_DAY),
+            preset_night=_parse_preset(
+                data.get(CONF_PRESET_NIGHT), DEFAULT_PRESET_NIGHT
+            ),
+            preset_auto=_parse_preset(data.get(CONF_PRESET_AUTO), DEFAULT_PRESET_AUTO),
         )
+
+
+def normalise_trigger_channels(value: object) -> tuple[int, ...]:
+    """Return a stable, de-duplicated tuple of trigger channel numbers.
+
+    Version 1 entries stored a single ``trigger_channel`` integer, while
+    current entries store a list in ``trigger_channels``.  Both (and a
+    comma-separated string from manual configuration) are accepted here.
+    """
+    if value is None:
+        value = DEFAULT_TRIGGER_CHANNEL
+    elif isinstance(value, (int, str)):
+        value = (value,)
+    channels: list[int] = []
+    for item in value:
+        for part in str(item).replace("，", ",").replace("+", ",").split(","):
+            part = part.strip()
+            if not part:
+                continue
+            channel = int(part)
+            if channel not in channels:
+                channels.append(channel)
+    if not channels:
+        raise ValueError("At least one trigger channel is required")
+    return tuple(sorted(channels))
+
+
+def _parse_preset(value: object, default: int) -> int:
+    """Return a valid PTZ preset number, falling back to *default*."""
+    if value is None or value == "":
+        return default
+    try:
+        preset = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return preset if MIN_PRESET_ID <= preset <= MAX_PRESET_ID else default
 
 
 def _parse_time(value: str | time) -> time:
@@ -312,7 +374,7 @@ class AlarmLightController:
     async def _async_handle_event(self, event: AlertEvent) -> None:
         if (
             event.event_type != EVENT_TYPE_FIELDDETECTION
-            or event.channel != self.settings.trigger_channel
+            or event.channel not in self.settings.trigger_channels
         ):
             return
 
@@ -457,6 +519,34 @@ class AlarmLightController:
             self.settings.camera_host,
             self.settings.camera_channel,
         )
+        # Force the ball camera into the day/colour preset while the light is
+        # on; this is best effort and must not fail the light boost.
+        await self._async_call_preset(
+            self.settings.preset_light_on, "light on (day/colour)"
+        )
+
+    def _preset_for_restore(self, now: datetime) -> int:
+        """Pick the day or night preset for the current moment."""
+        if is_night(now, self.settings.night_start, self.settings.night_end):
+            return self.settings.preset_night
+        return self.settings.preset_day
+
+    async def _async_call_preset(self, preset_id: int, purpose: str) -> None:
+        """Call a PTZ preset; failures are logged but never fatal."""
+        if preset_id <= 0:
+            return
+        try:
+            await self.hass.async_add_executor_job(
+                self.camera_client.goto_preset,
+                self.settings.camera_channel,
+                preset_id,
+            )
+        except Exception as err:  # noqa: BLE001 - presets must never break lighting
+            _LOGGER.warning(
+                "Could not call PTZ preset %s (%s): %s", preset_id, purpose, err
+            )
+        else:
+            _LOGGER.debug("Called PTZ preset %s (%s)", preset_id, purpose)
 
     async def _async_restore_light(self) -> None:
         if self._light_control == "aux":
@@ -481,6 +571,16 @@ class AlarmLightController:
             _LOGGER.info(
                 "Switched off PTZ aux LIGHT; supplement mode remains %s",
                 state.mode,
+            )
+            # After switching the light off, first return to the day or night
+            # picture for the current time, then hand control back to the
+            # camera's automatic day/night switching.
+            await self._async_call_preset(
+                self._preset_for_restore(dt_util.now()),
+                "light off (day/night mode)",
+            )
+            await self._async_call_preset(
+                self.settings.preset_auto, "light off (auto day/night)"
             )
             return
 

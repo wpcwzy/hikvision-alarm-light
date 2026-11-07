@@ -52,7 +52,7 @@ async def async_get_config_entry_diagnostics(
         "nvr": {
             "device": asdict(runtime.nvr_device),
             "base_url": runtime.nvr_client.base_url,
-            "trigger_channel": runtime.settings.trigger_channel,
+            "trigger_channels": list(runtime.settings.trigger_channels),
         },
         "camera": {
             "device": asdict(runtime.camera_device),

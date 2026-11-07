@@ -29,12 +29,16 @@ class AutomationSwitch(AlarmLightEntity, SwitchEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {
-            "trigger_channel": self.runtime.settings.trigger_channel,
+            "trigger_channels": list(self.runtime.settings.trigger_channels),
             "camera_channel": self.runtime.settings.camera_channel,
             "night_start": self.runtime.settings.night_start.strftime("%H:%M"),
             "night_end": self.runtime.settings.night_end.strftime("%H:%M"),
             "hold_seconds": self.runtime.settings.hold_seconds,
             "brightness": self.runtime.settings.brightness,
+            "preset_light_on": self.runtime.settings.preset_light_on,
+            "preset_day": self.runtime.settings.preset_day,
+            "preset_night": self.runtime.settings.preset_night,
+            "preset_auto": self.runtime.settings.preset_auto,
         }
 
     async def async_turn_on(self, **kwargs: Any) -> None:

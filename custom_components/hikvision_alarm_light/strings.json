@@ -3,11 +3,35 @@
     "step": {
       "user": {
         "title": "Connect to the NVR",
-        "description": "Enter the NVR that produces the intrusion alarm and the camera channel to watch. The credentials are stored by Home Assistant and only sent to the NVR."
+        "description": "Enter the NVR that produces the intrusion alarm and the camera channels to watch. Use a comma separated list when several channels should trigger the light (for example 2,6). The credentials are stored by Home Assistant and only sent to the NVR.",
+        "data": {
+          "nvr_host": "NVR address",
+          "nvr_port": "Port",
+          "nvr_use_ssl": "Use HTTPS",
+          "nvr_verify_ssl": "Verify TLS certificate",
+          "nvr_username": "Username",
+          "nvr_password": "Password",
+          "trigger_channels": "Alarm channels (comma separated)"
+        }
       },
       "camera": {
         "title": "Connect to the light camera",
-        "description": "NVR {nvr_host}, alarm channel {trigger_channel}. Enter the PTZ/camera whose white light should be boosted, plus the night window and hold time."
+        "description": "NVR {nvr_host}, alarm channels {trigger_channels}. Enter the PTZ/camera whose white light should be boosted, plus the night window and hold time.",
+        "data": {
+          "camera_host": "Camera address",
+          "camera_port": "Port",
+          "camera_use_ssl": "Use HTTPS",
+          "camera_verify_ssl": "Verify TLS certificate",
+          "camera_username": "Username",
+          "camera_password": "Password",
+          "camera_channel": "Light channel",
+          "name": "Name",
+          "night_start": "Night start (HH:MM)",
+          "night_end": "Night end (HH:MM)",
+          "hold_seconds": "Keep light after alarm ends (s)",
+          "max_boost_seconds": "Safety limit (s)",
+          "brightness": "Brightness (%)"
+        }
       }
     },
     "error": {
@@ -16,6 +40,7 @@
       "cannot_connect": "Could not connect to the device.",
       "nvr_invalid": "The NVR channel does not expose field detection or the account lacks permission.",
       "camera_invalid": "The camera does not expose supplement-light settings.",
+      "invalid_trigger_channels": "Alarm channels must be 1-64, for example 2,6.",
       "invalid_night_window": "Night start and end must be valid HH:MM times and must differ.",
       "invalid_hold_seconds": "Hold time must be between 10 and 3600 seconds.",
       "invalid_max_boost": "Safety limit must be between 60 and 3600 seconds.",
@@ -31,10 +56,25 @@
     "step": {
       "init": {
         "title": "Alarm-light options",
-        "description": "NVR {nvr_host} channel {nvr_channel} -> camera {camera_host} channel {camera_channel}."
+        "description": "NVR {nvr_host} channels {nvr_channels} -> camera {camera_host} channel {camera_channel}. Set a PTZ preset to 0 to skip that step.",
+        "data": {
+          "name": "Name",
+          "trigger_channels": "Alarm channels (comma separated)",
+          "night_start": "Night start (HH:MM)",
+          "night_end": "Night end (HH:MM)",
+          "hold_seconds": "Keep light after alarm ends (s)",
+          "max_boost_seconds": "Safety limit (s)",
+          "brightness": "Brightness (%)",
+          "preset_light_on": "Preset when light turns on (0 = off)",
+          "preset_day": "Day preset (0 = off)",
+          "preset_night": "Night preset (0 = off)",
+          "preset_auto": "Automatic day/night preset (0 = off)"
+        }
       }
     },
     "error": {
+      "invalid_trigger_channels": "Alarm channels must be 1-64, for example 2,6.",
+      "invalid_presets": "PTZ presets must be between 0 and 999 (0 disables the step).",
       "invalid_night_window": "Night start and end must be valid HH:MM times and must differ.",
       "invalid_hold_seconds": "Hold time must be between 10 and 3600 seconds.",
       "invalid_max_boost": "Safety limit must be between 60 and 3600 seconds.",
