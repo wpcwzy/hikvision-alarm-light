@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from custom_components.hikvision_alarm_light.api import (  # noqa: E402
+from custom_components.hikvision_alarm_light.api import (
     HikvisionError,
     HikvisionIsapiClient,
     build_boost_xml,
@@ -82,12 +82,12 @@ def main() -> int:
             return 0
 
         try:
-            camera.put_supplement_light(
-                args.camera_channel, build_boost_xml(100)
-            )
+            camera.put_supplement_light(args.camera_channel, build_boost_xml(100))
             time.sleep(1)
             boosted = camera.get_supplement_light(args.camera_channel)
-            print(f"Boosted: mode={boosted.mode}, white={boosted.white_light_brightness}")
+            print(
+                f"Boosted: mode={boosted.mode}, white={boosted.white_light_brightness}"
+            )
         finally:
             camera.put_supplement_light(args.camera_channel, original.raw_xml)
             time.sleep(1)
