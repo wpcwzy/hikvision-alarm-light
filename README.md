@@ -94,7 +94,7 @@
 - `binary_sensor.*_bao_jing_shi_jian_liu`：报警事件流是否连接
 - `sensor.*_shang_ci_ru_qin`：上次入侵时间
 - `button.*_ce_shi_bu_guang`：立即测试补光，保持配置的 hold 时间后自动恢复
-- `button.*_guan_bi_deng_guang`：立即关闭增强灯光（智能补光模式保持不变）
+- `button.*`（名称“关闭灯光”）：立即关闭增强灯光（智能补光模式保持不变）
 - `switch.*_zi_dong_lian_dong`：暂停/启用自动联动
 
 建议先用“测试补光”按钮在白天验证：约 5 分钟后它会自动关闭灯光，智能补光模式保持不变。
