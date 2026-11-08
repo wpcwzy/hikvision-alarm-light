@@ -56,7 +56,7 @@
     "step": {
       "init": {
         "title": "报警补光选项",
-        "description": "NVR {nvr_host} 通道 {nvr_channels} → 摄像机 {camera_host} 通道 {camera_channel}。关灯后先切红外补光、再切回智能补光，中间间隔由下方设置控制。",
+        "description": "NVR {nvr_host} 通道 {nvr_channels} → 摄像机 {camera_host} 通道 {camera_channel}。关灯后先切换到白光补光，保持下方设置的时长，再切回智能补光。",
         "data": {
           "name": "名称",
           "trigger_channels": "报警通道（逗号分隔）",
@@ -65,7 +65,7 @@
           "hold_seconds": "报警结束后保持（秒）",
           "max_boost_seconds": "安全上限（秒）",
           "brightness": "亮度（%）",
-          "restore_interval": "红外→智能补光切换间隔（秒，0 = 不等待）"
+          "white_hold_seconds": "白光补光保持时间（秒，默认 30）"
         }
       }
     },
@@ -77,7 +77,7 @@
       "invalid_brightness": "亮度必须在 1 到 100 之间。",
       "invalid_values": "有一个或多个数值无效。",
       "unknown": "发生未知错误，请查看 Home Assistant 日志。",
-      "invalid_restore_interval": "红外→智能补光切换间隔必须在 0 到 10 秒之间。"
+      "invalid_white_hold": "白光补光保持时间必须在 0 到 600 秒之间。"
     },
     "abort": {
       "entry_not_found": "找不到对应的配置条目。"

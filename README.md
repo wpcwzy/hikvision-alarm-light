@@ -4,7 +4,7 @@
 “区域入侵 / 周界防范”报警时，自动打开指定海康摄像机/球机的
 **专用照明灯（与摄像机 Web UI 的“灯光”按钮相同的接口）**，亮灯期间保持
 黑白（红外）画面，不切换白天模式。报警结束 **5 分钟**后关闭照明灯，随后通过
-ISAPI 补光接口**先切换到红外补光、再切回智能补光**（两步之间可配置间隔），
+ISAPI 补光接口**先切换到白光补光，保持一段时间（默认 30 秒）后再切回智能补光**，
 不再使用预置点来切换日夜模式。
 
 灯光控制过程中**不会修改补光模式**：智能补光、红外灯及其亮度策略保持原样，
@@ -27,9 +27,10 @@ ISAPI 补光接口**先切换到红外补光、再切回智能补光**（两步�
 - 不修改 `/ISAPI/Image/channels/<n>/supplementLight`，因此智能补光模式、
   红外灯亮度、IR-CUT 策略都不会被改动。
 - 事件 `inactive` 后保持 5 分钟（可配置），然后关闭 aux 灯光。
-- 灭灯后通过 `/ISAPI/Image/channels/<n>/supplementLight` 先切到**红外补光**
-  （`irLight`），间隔一段时间（默认 1 秒）后再切回**智能补光**
-  （`eventIntelligence`），由补光接口恢复摄像机自动日夜策略，不移动云台。
+- 灭灯后通过 `/ISAPI/Image/channels/<n>/supplementLight` 先切到**白光补光**
+  （`colorVuWhiteLight`），保持一段可配置时间（默认 **30 秒**）后再切回
+  **智能补光**（`eventIntelligence`），由补光接口恢复摄像机自动日夜策略，
+  不移动云台。
 - 安全上限（默认 15 分钟）：即使没有收到 `inactive`，也不会永久点亮。
 - 如果 HA 在照明期间重启，会自动关闭 aux 灯光，避免灯一直亮着。
 - 对于不支持 PTZ aux LIGHT 的摄像机，自动回退到 `supplementLight` 模式切换
@@ -48,8 +49,9 @@ ISAPI 补光接口**先切换到红外补光、再切回智能补光**（两步�
 - 直接灯光接口：`/ISAPI/PTZCtrl/channels/1/auxcontrols/1`
   （与摄像机 Web UI 的“灯光”按钮相同）
 - 补光模式：`eventIntelligence`（智能补光）、`irLight`（红外补光）、
-  `colorVuWhiteLight`（白光）
-- 灭灯恢复顺序：`irLight` → 间隔 1 秒 → `eventIntelligence`（ISAPI 补光接口）
+  `colorVuWhiteLight`（白光补光）
+- 灭灯恢复顺序：`colorVuWhiteLight` → 保持 30 秒 → `eventIntelligence`
+  （ISAPI 补光接口）
 - 补光配置：`eventIntelligence`，白光灯亮度 100，控制前后保持不变
 - Home Assistant 2026.8.3（实际部署），2025.1.4（自动化测试）
 
@@ -94,10 +96,10 @@ ISAPI 补光接口**先切换到红外补光、再切回智能补光**（两步�
 | 报警结束保持 | `300` 秒（5 分钟） | inactive 后再保持多久 |
 | 安全上限 | `900` 秒（15 分钟） | 没有 inactive 时的兜底 |
 | 亮度 | `100` | 白光灯最大亮度 |
-| 恢复间隔 | `1` 秒 | 关灯后“红外补光 → 智能补光”两步之间的等待，0 表示不等待 |
+| 白光补光保持 | `30` 秒 | 关灯后先切白光补光并保持该时长，然后再切回智能补光；0 表示立即切回 |
 
 一个配置条目对应一条“NVR 通道（可多个）→ 摄像机通道”联动。关灯后的
-补光模式恢复间隔可在“配置 → 选项”中修改。
+关灯后白光补光的保持时间可在“配置 → 选项”中修改。
 
 ## 实体
 
@@ -177,15 +179,15 @@ Content-Type: application/xml
 
 <?xml version="1.0" encoding="UTF-8"?>
 <SupplementLight version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
-<supplementLightMode>irLight</supplementLightMode>
-<irLightBrightness>100</irLightBrightness>
+<supplementLightMode>colorVuWhiteLight</supplementLightMode>
+<whiteLightBrightness>100</whiteLightBrightness>
 </SupplementLight>
 ```
 
 1. **关灯**：先发送 aux LIGHT off。
-2. **先切红外补光**：把补光模式设置为 `irLight`，让画面回到黑白红外夜视。
-3. **等待间隔**（默认 1 秒，可配置，避免球机吞掉第二条命令）。
-4. **再切智能补光**：把补光模式恢复为 `eventIntelligence`（智能补光），
+2. **先切白光补光**：把补光模式设置为 `colorVuWhiteLight`（白光补光）。
+3. **保持一段时间**：默认 **30 秒**（可配置 0–600 秒），让画面在补光下平稳过渡。
+4. **再切智能补光**：把补光模式切回 `eventIntelligence`（智能补光），
    由摄像机自身的日夜策略接管。
 
 如果某一步失败，只记录警告日志、另一条仍会继续尝试，不会影响灯光的开关；
@@ -200,7 +202,7 @@ Content-Type: application/xml
 
 - 报警结束时只关闭灯光并恢复日夜模式，不改变摄像机侦测、录像等设置。
 - 如果 HA 重启时灯光仍在进行，集成读取持久化状态并发送 aux LIGHT off，
-  并通过补光接口恢复红外→智能补光。
+  并通过补光接口先切白光补光、再恢复智能补光。
 - 如果关闭命令失败，会每 30 秒重试，并保留 diagnostic 错误信息。
 - 安全上限防止因事件流中断导致灯永久点亮。
 - 集成卸载时会尝试关闭 aux 灯光。
@@ -214,8 +216,8 @@ Content-Type: application/xml
 | 摄像机补光接口返回 404 | 该型号可能没有 `/ISAPI/Image/channels/<ch>/supplementLight`；在浏览器/curl 验证 |
 | 报警时灯不亮 | 检查夜间时段、自动联动开关、报警通道列表（选项里是否包含该通道）、NVR 通道是否真的产生 `fielddetection` 事件 |
 | 灯一直亮 | 使用“关闭灯光”按钮；检查安全上限；重启 HA 时会自动关灯 |
-| 灭灯后画面仍是彩色/白天模式 | 集成会先切红外补光再切智能补光；确认摄像机支持 `supplementLight` 接口，并检查日志中的补光切换警告 |
-| 灭灯后没回到智能补光 | 若球机吞命令，可在选项里把“恢复间隔”调大到 2~3 秒；也可用 curl 手动验证补光接口 |
+| 灭灯后白光一直不灭/一直保持彩色 | 集成会先切白光补光、按“白光补光保持”时间后再切回智能补光；检查该时间设置与日志中的补光切换警告 |
+| 灭灯后没回到智能补光 | 确认“白光补光保持”时间已生效；可用 curl 手动验证补光接口，若球机吞命令可适当加长保持时间 |
 | 手机收不到通知 | 本集成只控制补光灯；NVR 报警推送仍由海康 Hik-Connect/上传中心负责 |
 
 ### 手动验证 aux 灯光接口
@@ -236,10 +238,10 @@ curl --digest -u "$CAMERA_USERNAME:$CAMERA_PASSWORD" \
 ### 手动验证补光模式切换
 
 ```bash
-# 切到红外补光（夜视）
+# 切到白光补光
 curl --digest -u "$CAMERA_USERNAME:$CAMERA_PASSWORD" \
   -X PUT -H "Content-Type: application/xml" \
-  --data-binary '<?xml version="1.0" encoding="UTF-8"?><SupplementLight version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema"><supplementLightMode>irLight</supplementLightMode><irLightBrightness>100</irLightBrightness></SupplementLight>' \
+  --data-binary '<?xml version="1.0" encoding="UTF-8"?><SupplementLight version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema"><supplementLightMode>colorVuWhiteLight</supplementLightMode><whiteLightBrightness>100</whiteLightBrightness></SupplementLight>' \
   "http://$CAMERA_HOST/ISAPI/Image/channels/1/supplementLight"
 
 # 切回智能补光
@@ -259,8 +261,8 @@ python3 -m venv .venv
 
 纯函数测试覆盖事件解析、multipart 分帧、补光 XML 与夜间判断；
 Home Assistant 测试覆盖配置流、选项流、旧配置迁移、多通道任一触发、实体创建、
-关灯后“先红外再智能补光”的恢复流程及间隔、inactive 后自动恢复、按钮和自动
-联动开关。
+关灯后“先白光补光、保持一段时间、再切智能补光”的恢复流程及保持时间、
+inactive 后自动恢复、按钮和自动联动开关。
 
 ### 打包发布
 

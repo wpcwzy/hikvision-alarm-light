@@ -52,9 +52,9 @@ from .const import (
     CONF_NVR_USE_SSL,
     CONF_NVR_USERNAME,
     CONF_NVR_VERIFY_SSL,
-    CONF_RESTORE_INTERVAL,
     CONF_TRIGGER_CHANNEL,
     CONF_TRIGGER_CHANNELS,
+    CONF_WHITE_HOLD_SECONDS,
     CONFIG_ENTRY_MINOR_VERSION,
     CONFIG_ENTRY_VERSION,
     DEFAULT_BRIGHTNESS,
@@ -66,19 +66,19 @@ from .const import (
     DEFAULT_NIGHT_END,
     DEFAULT_NIGHT_START,
     DEFAULT_NVR_PORT,
-    DEFAULT_RESTORE_INTERVAL_SECONDS,
     DEFAULT_TRIGGER_CHANNEL,
+    DEFAULT_WHITE_HOLD_SECONDS,
     DOMAIN,
     MAX_BOOST_SECONDS,
     MAX_BRIGHTNESS,
     MAX_CHANNEL,
     MAX_HOLD_SECONDS,
-    MAX_RESTORE_INTERVAL_SECONDS,
+    MAX_WHITE_HOLD_SECONDS,
     MIN_BOOST_SECONDS,
     MIN_BRIGHTNESS,
     MIN_CHANNEL,
     MIN_HOLD_SECONDS,
-    MIN_RESTORE_INTERVAL_SECONDS,
+    MIN_WHITE_HOLD_SECONDS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -229,17 +229,17 @@ def _parse_channels(value: Any) -> list[int] | None:
     return sorted(channels)
 
 
-def _parse_restore_interval(value: Any) -> int | None:
-    """Parse the pause between the IR and smart supplement-light restores."""
+def _parse_white_hold_seconds(value: Any) -> int | None:
+    """Parse how long the white supplement light is kept after switch-off."""
     if value is None or str(value).strip() == "":
-        return DEFAULT_RESTORE_INTERVAL_SECONDS
+        return DEFAULT_WHITE_HOLD_SECONDS
     try:
-        interval = int(value)
+        hold = int(value)
     except (TypeError, ValueError):
         return None
-    if not MIN_RESTORE_INTERVAL_SECONDS <= interval <= MAX_RESTORE_INTERVAL_SECONDS:
+    if not MIN_WHITE_HOLD_SECONDS <= hold <= MAX_WHITE_HOLD_SECONDS:
         return None
-    return interval
+    return hold
 
 
 def _format_channels(channels: list[int] | tuple[int, ...]) -> str:
@@ -418,7 +418,7 @@ class HikvisionAlarmLightConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_HOLD_SECONDS: hold_seconds,
                         CONF_MAX_BOOST_SECONDS: max_boost_seconds,
                         CONF_BRIGHTNESS: brightness,
-                        CONF_RESTORE_INTERVAL: DEFAULT_RESTORE_INTERVAL_SECONDS,
+                        CONF_WHITE_HOLD_SECONDS: DEFAULT_WHITE_HOLD_SECONDS,
                     }
                     return self.async_create_entry(title=name, data=data)
                 finally:
@@ -460,11 +460,11 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
         current_hold = int(merged.get(CONF_HOLD_SECONDS, DEFAULT_HOLD_SECONDS))
         current_max = int(merged.get(CONF_MAX_BOOST_SECONDS, DEFAULT_MAX_BOOST_SECONDS))
         current_brightness = int(merged.get(CONF_BRIGHTNESS, DEFAULT_BRIGHTNESS))
-        current_restore_interval = _parse_restore_interval(
-            merged.get(CONF_RESTORE_INTERVAL)
+        current_white_hold = _parse_white_hold_seconds(
+            merged.get(CONF_WHITE_HOLD_SECONDS)
         )
-        if current_restore_interval is None:
-            current_restore_interval = DEFAULT_RESTORE_INTERVAL_SECONDS
+        if current_white_hold is None:
+            current_white_hold = DEFAULT_WHITE_HOLD_SECONDS
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -472,8 +472,8 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
             channels = _parse_channels(user_input.get(CONF_TRIGGER_CHANNELS))
             night_start = _parse_time(user_input.get(CONF_NIGHT_START))
             night_end = _parse_time(user_input.get(CONF_NIGHT_END))
-            restore_interval = _parse_restore_interval(
-                user_input.get(CONF_RESTORE_INTERVAL)
+            white_hold = _parse_white_hold_seconds(
+                user_input.get(CONF_WHITE_HOLD_SECONDS)
             )
             try:
                 hold_seconds = int(user_input[CONF_HOLD_SECONDS])
@@ -484,8 +484,8 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
             else:
                 if channels is None:
                     errors["base"] = "invalid_trigger_channels"
-                elif restore_interval is None:
-                    errors["base"] = "invalid_restore_interval"
+                elif white_hold is None:
+                    errors["base"] = "invalid_white_hold"
                 elif (
                     night_start is None or night_end is None or night_start == night_end
                 ):
@@ -510,7 +510,7 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
                         CONF_HOLD_SECONDS: hold_seconds,
                         CONF_MAX_BOOST_SECONDS: max_boost_seconds,
                         CONF_BRIGHTNESS: brightness,
-                        CONF_RESTORE_INTERVAL: restore_interval,
+                        CONF_WHITE_HOLD_SECONDS: white_hold,
                     }
                     self.hass.config_entries.async_update_entry(
                         entry, title=name, options=options
@@ -526,8 +526,8 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
                 current_brightness = int(user_input[CONF_BRIGHTNESS])
             except (KeyError, TypeError, ValueError):
                 pass
-            if restore_interval is not None:
-                current_restore_interval = restore_interval
+            if white_hold is not None:
+                current_white_hold = white_hold
 
         return self.async_show_form(
             step_id="init",
@@ -576,11 +576,11 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
                         )
                     ),
                     vol.Required(
-                        CONF_RESTORE_INTERVAL, default=current_restore_interval
+                        CONF_WHITE_HOLD_SECONDS, default=current_white_hold
                     ): NumberSelector(
                         NumberSelectorConfig(
-                            min=MIN_RESTORE_INTERVAL_SECONDS,
-                            max=MAX_RESTORE_INTERVAL_SECONDS,
+                            min=MIN_WHITE_HOLD_SECONDS,
+                            max=MAX_WHITE_HOLD_SECONDS,
                             mode=NumberSelectorMode.BOX,
                             step=1,
                             unit_of_measurement="s",

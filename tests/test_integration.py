@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -35,9 +35,9 @@ from custom_components.hikvision_alarm_light.const import (
     CONF_NVR_USE_SSL,
     CONF_NVR_USERNAME,
     CONF_NVR_VERIFY_SSL,
-    CONF_RESTORE_INTERVAL,
     CONF_TRIGGER_CHANNEL,
     CONF_TRIGGER_CHANNELS,
+    CONF_WHITE_HOLD_SECONDS,
     CONFIG_ENTRY_VERSION,
     DOMAIN,
 )
@@ -70,7 +70,7 @@ def make_data(
         CONF_HOLD_SECONDS: 120,
         CONF_MAX_BOOST_SECONDS: 300,
         CONF_BRIGHTNESS: 100,
-        CONF_RESTORE_INTERVAL: 0,
+        CONF_WHITE_HOLD_SECONDS: 0,
     }
 
 
@@ -158,7 +158,7 @@ async def test_alarm_on_either_channel_boosts_light(hass: HomeAssistant) -> None
     assert camera.aux_on is False
     assert camera.mode == "eventIntelligence"
     # After the light goes off: IR supplement light first, smart mode second.
-    assert camera.supplement_history == ["irLight", "eventIntelligence"]
+    assert camera.supplement_history == ["colorVuWhiteLight", "eventIntelligence"]
     assert hass.states.get(boost_id).state == "off"
 
     # Channel 6 (the PTZ camera itself) triggers the same light.
@@ -177,7 +177,7 @@ async def test_alarm_on_either_channel_boosts_light(hass: HomeAssistant) -> None
     assert camera.closed is True
 
 
-async def test_restore_switches_ir_then_smart(hass: HomeAssistant) -> None:
+async def test_restore_switches_white_then_smart(hass: HomeAssistant) -> None:
     entry, camera, reader = await setup_entry(hass)
     restore_id = entity_id(hass, entry, "button", "restore_light")
 
@@ -191,37 +191,68 @@ async def test_restore_switches_ir_then_smart(hass: HomeAssistant) -> None:
     )
     await hass.async_block_till_done()
     assert camera.aux_on is False
-    assert camera.supplement_history == ["irLight", "eventIntelligence"]
+    assert camera.supplement_history == ["colorVuWhiteLight", "eventIntelligence"]
     assert camera.mode == "eventIntelligence"
 
 
-async def test_restore_uses_configured_interval(hass: HomeAssistant) -> None:
+async def test_restore_white_light_hold_is_configurable(
+    hass: HomeAssistant,
+) -> None:
     data = make_data()
-    data[CONF_RESTORE_INTERVAL] = 3
-    entry, camera, reader = await setup_entry(hass, make_entry(data=data))
-    controller = entry.runtime_data.controller
+    data[CONF_WHITE_HOLD_SECONDS] = 30
+    _entry, camera, reader = await setup_entry(hass, make_entry(data=data))
 
     reader.emit_event(event(2, "active"))
     await hass.async_block_till_done()
+    reader.emit_event(event(2, "inactive"))
+    await hass.async_block_till_done()
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=130))
+    await hass.async_block_till_done()
 
-    with patch.object(
-        type(controller), "_async_restore_delay", new=AsyncMock()
-    ) as delay:
-        reader.emit_event(event(2, "inactive"))
-        await hass.async_block_till_done()
-        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=130))
-        await hass.async_block_till_done()
+    # White supplement light is on while the configured hold is still running.
+    assert camera.supplement_history == ["colorVuWhiteLight"]
+    assert camera.mode == "colorVuWhiteLight"
 
-    delay.assert_awaited_once_with(3)
-    assert camera.supplement_history == ["irLight", "eventIntelligence"]
+    # Still inside the 30 s hold: smart mode must not be restored yet.
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=25))
+    await hass.async_block_till_done()
+    assert camera.supplement_history == ["colorVuWhiteLight"]
+
+    # After the hold has elapsed the smart supplement light is restored.
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=40))
+    await hass.async_block_till_done()
+    assert camera.supplement_history == ["colorVuWhiteLight", "eventIntelligence"]
+    assert camera.mode == "eventIntelligence"
 
 
-async def test_restore_continues_when_ir_step_fails(hass: HomeAssistant) -> None:
+async def test_unload_finishes_pending_smart_restore(hass: HomeAssistant) -> None:
+    data = make_data()
+    data[CONF_WHITE_HOLD_SECONDS] = 300
+    entry, camera, reader = await setup_entry(hass, make_entry(data=data))
+
+    reader.emit_event(event(2, "active"))
+    await hass.async_block_till_done()
+    reader.emit_event(event(2, "inactive"))
+    await hass.async_block_till_done()
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=130))
+    await hass.async_block_till_done()
+    assert camera.mode == "colorVuWhiteLight"
+
+    # Unloading must not leave the camera in white-light mode.
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert camera.supplement_history == ["colorVuWhiteLight", "eventIntelligence"]
+    assert camera.mode == "eventIntelligence"
+
+
+async def test_restore_continues_when_white_step_fails(
+    hass: HomeAssistant,
+) -> None:
     _entry, camera, reader = await setup_entry(hass)
     original = FakeHikvisionClient.put_supplement_light
 
     def flaky_put(client, channel: int, xml_text: str) -> None:
-        if "<supplementLightMode>irLight</supplementLightMode>" in xml_text:
+        if "<supplementLightMode>colorVuWhiteLight</supplementLightMode>" in xml_text:
             raise HikvisionError("camera busy")
         original(client, channel, xml_text)
 
@@ -233,7 +264,7 @@ async def test_restore_continues_when_ir_step_fails(hass: HomeAssistant) -> None
         async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=130))
         await hass.async_block_till_done()
 
-    # The failed IR step must not prevent the smart restore.
+    # The failed white-light step must not prevent the smart restore.
     assert camera.supplement_history == ["eventIntelligence"]
     assert camera.mode == "eventIntelligence"
 
@@ -257,7 +288,7 @@ async def test_button_and_switch(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
     assert camera.aux_on is False
     assert camera.mode == "eventIntelligence"
-    assert camera.supplement_history == ["irLight", "eventIntelligence"]
+    assert camera.supplement_history == ["colorVuWhiteLight", "eventIntelligence"]
 
     await hass.services.async_call(
         "switch", "turn_off", {"entity_id": automation_switch}, blocking=True

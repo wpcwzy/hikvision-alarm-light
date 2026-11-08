@@ -32,7 +32,7 @@ CONF_HOLD_SECONDS: Final = "hold_seconds"
 CONF_MAX_BOOST_SECONDS: Final = "max_boost_seconds"
 CONF_BRIGHTNESS: Final = "brightness"
 
-CONF_RESTORE_INTERVAL: Final = "restore_interval"
+CONF_WHITE_HOLD_SECONDS: Final = "white_hold_seconds"
 
 DEFAULT_NVR_PORT: Final = 80
 DEFAULT_CAMERA_PORT: Final = 80
@@ -56,14 +56,12 @@ MIN_BRIGHTNESS: Final = 1
 MAX_BRIGHTNESS: Final = 100
 
 # While the white light is on the picture is kept in B/W (IR).  After the light
-# is switched off the supplement light is first forced to the IR illuminator and
-# then handed back to the smart (automatic) mode, separated by a short pause so
-# the camera does not drop the second request.  0 disables the pause.
-CONF_SUPPLEMENT_MODE_IR: Final = "irLight"
-CONF_SUPPLEMENT_MODE_SMART: Final = "eventIntelligence"
-DEFAULT_RESTORE_INTERVAL_SECONDS: Final = 1
-MIN_RESTORE_INTERVAL_SECONDS: Final = 0
-MAX_RESTORE_INTERVAL_SECONDS: Final = 10
+# is switched off the supplement light is first forced to white light
+# (colorVuWhiteLight) and, after this hold time, handed back to the smart
+# (automatic) mode.  0 skips the wait and switches to smart mode immediately.
+DEFAULT_WHITE_HOLD_SECONDS: Final = 30
+MIN_WHITE_HOLD_SECONDS: Final = 0
+MAX_WHITE_HOLD_SECONDS: Final = 600
 
 CONFIG_ENTRY_VERSION: Final = 2
 CONFIG_ENTRY_MINOR_VERSION: Final = 1

@@ -35,7 +35,7 @@ class AutomationSwitch(AlarmLightEntity, SwitchEntity):
             "night_end": self.runtime.settings.night_end.strftime("%H:%M"),
             "hold_seconds": self.runtime.settings.hold_seconds,
             "brightness": self.runtime.settings.brightness,
-            "restore_interval": self.runtime.settings.restore_interval_seconds,
+            "white_hold_seconds": self.runtime.settings.white_hold_seconds,
         }
 
     async def async_turn_on(self, **kwargs: Any) -> None:

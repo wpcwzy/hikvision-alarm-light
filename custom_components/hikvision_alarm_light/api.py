@@ -48,13 +48,6 @@ SMART_XML = """<?xml version="1.0" encoding="UTF-8"?>
 </SupplementLight>
 """
 
-IR_XML = """<?xml version="1.0" encoding="UTF-8"?>
-<SupplementLight version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
-<supplementLightMode>irLight</supplementLightMode>
-<irLightBrightness>100</irLightBrightness>
-</SupplementLight>
-"""
-
 
 def build_aux_light_xml(on: bool, aux_id: int = 1) -> str:
     """Build the PTZ auxiliary-light command used by the camera web UI.
@@ -260,11 +253,6 @@ def build_boost_xml(brightness: int = 100) -> str:
 def build_smart_xml() -> str:
     """Return the canonical "smart supplement light" XML."""
     return SMART_XML
-
-
-def build_ir_xml() -> str:
-    """Return XML that switches the supplement light to the IR illuminator."""
-    return IR_XML
 
 
 def extract_multipart_parts(

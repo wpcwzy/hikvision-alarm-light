@@ -56,7 +56,7 @@
     "step": {
       "init": {
         "title": "Alarm-light options",
-        "description": "NVR {nvr_host} channels {nvr_channels} -> camera {camera_host} channel {camera_channel}. After the light turns off the supplement light is switched to IR first and then back to smart mode; the pause between the two is configured below.",
+        "description": "NVR {nvr_host} channels {nvr_channels} -> camera {camera_host} channel {camera_channel}. After the light turns off the supplement light is switched to white light first and back to smart mode after the configured hold time.",
         "data": {
           "name": "Name",
           "trigger_channels": "Alarm channels (comma separated)",
@@ -65,7 +65,7 @@
           "hold_seconds": "Keep light after alarm ends (s)",
           "max_boost_seconds": "Safety limit (s)",
           "brightness": "Brightness (%)",
-          "restore_interval": "Pause between IR and smart supplement light (s, 0 = no wait)"
+          "white_hold_seconds": "White-light hold before smart mode (s, default 30)"
         }
       }
     },
@@ -77,7 +77,7 @@
       "invalid_brightness": "Brightness must be between 1 and 100.",
       "invalid_values": "One or more values are invalid.",
       "unknown": "Unexpected error; check the Home Assistant logs.",
-      "invalid_restore_interval": "The pause between IR and smart supplement light must be 0-10 seconds."
+      "invalid_white_hold": "The white-light hold must be between 0 and 600 seconds."
     },
     "abort": {
       "entry_not_found": "The config entry could not be found."

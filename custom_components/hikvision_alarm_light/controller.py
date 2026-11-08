@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -20,7 +19,6 @@ from .api import (
     HikvisionError,
     HikvisionIsapiClient,
     build_boost_xml,
-    build_ir_xml,
     build_smart_xml,
 )
 from .const import (
@@ -43,15 +41,15 @@ from .const import (
     CONF_NVR_USE_SSL,
     CONF_NVR_USERNAME,
     CONF_NVR_VERIFY_SSL,
-    CONF_RESTORE_INTERVAL,
     CONF_TRIGGER_CHANNEL,
     CONF_TRIGGER_CHANNELS,
-    DEFAULT_RESTORE_INTERVAL_SECONDS,
+    CONF_WHITE_HOLD_SECONDS,
     DEFAULT_TRIGGER_CHANNEL,
+    DEFAULT_WHITE_HOLD_SECONDS,
     DOMAIN,
     EVENT_TYPE_FIELDDETECTION,
-    MAX_RESTORE_INTERVAL_SECONDS,
-    MIN_RESTORE_INTERVAL_SECONDS,
+    MAX_WHITE_HOLD_SECONDS,
+    MIN_WHITE_HOLD_SECONDS,
     STORE_VERSION,
 )
 
@@ -82,7 +80,7 @@ class LinkSettings:
     hold_seconds: int
     max_boost_seconds: int
     brightness: int
-    restore_interval_seconds: int
+    white_hold_seconds: int
 
     @classmethod
     def from_entry(cls, data: dict) -> LinkSettings:
@@ -109,8 +107,8 @@ class LinkSettings:
             hold_seconds=int(data[CONF_HOLD_SECONDS]),
             max_boost_seconds=int(data[CONF_MAX_BOOST_SECONDS]),
             brightness=int(data[CONF_BRIGHTNESS]),
-            restore_interval_seconds=_parse_restore_interval(
-                data.get(CONF_RESTORE_INTERVAL)
+            white_hold_seconds=_parse_white_hold_seconds(
+                data.get(CONF_WHITE_HOLD_SECONDS)
             ),
         )
 
@@ -140,17 +138,17 @@ def normalise_trigger_channels(value: object) -> tuple[int, ...]:
     return tuple(sorted(channels))
 
 
-def _parse_restore_interval(value: object) -> int:
-    """Return the pause between the IR and smart supplement-light restores."""
+def _parse_white_hold_seconds(value: object) -> int:
+    """Return how long white-light supplement light is kept after switch-off."""
     if value is None or value == "":
-        return DEFAULT_RESTORE_INTERVAL_SECONDS
+        return DEFAULT_WHITE_HOLD_SECONDS
     try:
-        interval = int(value)  # type: ignore[arg-type]
+        hold = int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
-        return DEFAULT_RESTORE_INTERVAL_SECONDS
-    if not MIN_RESTORE_INTERVAL_SECONDS <= interval <= MAX_RESTORE_INTERVAL_SECONDS:
-        return DEFAULT_RESTORE_INTERVAL_SECONDS
-    return interval
+        return DEFAULT_WHITE_HOLD_SECONDS
+    if not MIN_WHITE_HOLD_SECONDS <= hold <= MAX_WHITE_HOLD_SECONDS:
+        return DEFAULT_WHITE_HOLD_SECONDS
+    return hold
 
 
 def _parse_time(value: str | time) -> time:
@@ -229,6 +227,8 @@ class AlarmLightController:
         self._aux_supported = False
         self._restore_unsub: CALLBACK_TYPE | None = None
         self._guard_unsub: CALLBACK_TYPE | None = None
+        self._smart_unsub: CALLBACK_TYPE | None = None
+        self._smart_pending = False
         self._running = False
 
         factory = reader_factory or AlertStreamReader
@@ -281,6 +281,16 @@ class AlarmLightController:
                 _LOGGER.warning("Could not recover interrupted light boost: %s", err)
                 self._last_error = str(err)
                 self._schedule_restore(30)
+        elif stored.get("smart_pending"):
+            _LOGGER.info(
+                "Recovering interrupted white-light hold; restoring smart light"
+            )
+            self._smart_pending = True
+            try:
+                await self._async_finish_smart_restore()
+            except HikvisionError as err:
+                _LOGGER.warning("Could not restore smart supplement light: %s", err)
+                self._last_error = str(err)
         else:
             await self._async_read_camera_mode()
 
@@ -308,7 +318,15 @@ class AlarmLightController:
         self._running = False
         self._cancel_restore()
         self._cancel_guard()
+        self._cancel_smart_restore()
         self._reader.stop()
+        if self._smart_pending:
+            try:
+                await self._async_finish_smart_restore()
+            except HikvisionError as err:
+                _LOGGER.warning(
+                    "Could not restore smart supplement light while stopping: %s", err
+                )
         if self._boost_active:
             try:
                 await self._async_restore_light()
@@ -333,6 +351,7 @@ class AlarmLightController:
         """Manually restore the smart supplement-light mode."""
         self._cancel_restore()
         self._cancel_guard()
+        self._cancel_smart_restore()
         await self._async_restore_light()
         self._notify()
 
@@ -510,9 +529,46 @@ class AlarmLightController:
             self.settings.camera_channel,
         )
 
-    async def _async_restore_delay(self, seconds: int) -> None:
-        """Wait between supplement-light commands so none gets dropped."""
-        await asyncio.sleep(seconds)
+    def _schedule_smart_restore(self, hold_seconds: int) -> None:
+        """Switch back to smart supplement light after *hold_seconds*."""
+        self._cancel_smart_restore()
+        self._smart_pending = True
+        self._smart_unsub = async_call_later(
+            self.hass, max(0, hold_seconds), self._async_smart_restore_timer
+        )
+
+    def _cancel_smart_restore(self) -> None:
+        if self._smart_unsub is not None:
+            self._smart_unsub()
+            self._smart_unsub = None
+
+    async def _async_smart_restore_timer(self, _now: datetime) -> None:
+        self._smart_unsub = None
+        try:
+            await self._async_finish_smart_restore()
+        except HikvisionError as err:
+            self._last_error = str(err)
+            _LOGGER.error("Could not restore smart supplement light: %s", err)
+            self._notify()
+
+    async def _async_finish_smart_restore(self) -> None:
+        """Switch the supplement light back to the smart/automatic mode."""
+        smart_ok = await self._async_set_supplement_mode(
+            build_smart_xml(), "smart/automatic"
+        )
+        state = await self.hass.async_add_executor_job(
+            self.camera_client.get_supplement_light,
+            self.settings.camera_channel,
+        )
+        self._camera_mode = state.mode
+        self._smart_pending = False
+        if smart_ok:
+            self._last_error = None
+        await self._save_state()
+        self._notify()
+        _LOGGER.info(
+            "Restored smart supplement light; camera mode is now %s", state.mode
+        )
 
     async def _async_set_supplement_mode(self, xml_text: str, label: str) -> bool:
         """Switch the camera supplement light to a mode; failures are logged."""
@@ -538,38 +594,28 @@ class AlarmLightController:
             )
             # The PTZ presets used previously for day/night switching also moved
             # the camera and could be dropped by the device.  Use the supplement
-            # light API instead: force the IR illuminator first, then hand the
-            # light back to the smart/automatic mode.  Keep a short pause in
-            # between so the camera does not drop the second request.
-            ir_ok = await self._async_set_supplement_mode(
-                build_ir_xml(), "infrared (night vision)"
-            )
-            if ir_ok and self.settings.restore_interval_seconds > 0:
-                _LOGGER.debug(
-                    "Waiting %ss before restoring the smart supplement light",
-                    self.settings.restore_interval_seconds,
-                )
-                await self._async_restore_delay(self.settings.restore_interval_seconds)
-            smart_ok = await self._async_set_supplement_mode(
-                build_smart_xml(), "smart/automatic"
-            )
-            state = await self.hass.async_add_executor_job(
-                self.camera_client.get_supplement_light,
-                self.settings.camera_channel,
+            # light API instead: switch to white-light supplement first, keep it
+            # on for the configured hold time, then hand the light back to the
+            # smart/automatic mode.  The delayed smart switch runs as an HA timer
+            # so the button/service call does not block for the whole hold time.
+            white_ok = await self._async_set_supplement_mode(
+                build_boost_xml(self.settings.brightness), "white light"
             )
             self._boost_active = False
             self._restore_xml = None
-            self._camera_mode = state.mode
+            if white_ok:
+                self._camera_mode = "colorVuWhiteLight"
             self._boost_ends_at = None
-            if smart_ok:
-                self._last_error = None
             self._cancel_restore()
             self._cancel_guard()
+            hold_seconds = self.settings.white_hold_seconds if white_ok else 0
+            self._schedule_smart_restore(hold_seconds)
             await self._save_state()
             self._notify()
             _LOGGER.info(
-                "Switched off PTZ aux LIGHT; supplement mode restored to %s",
-                state.mode,
+                "Switched off PTZ aux LIGHT; white supplement light will be held "
+                "for %ss before restoring smart mode",
+                hold_seconds,
             )
             return
 
@@ -677,6 +723,7 @@ class AlarmLightController:
                 "enabled": self._enabled,
                 "boost_active": self._boost_active,
                 "restore_xml": self._restore_xml if self._boost_active else None,
+                "smart_pending": self._smart_pending,
             }
         )
 
