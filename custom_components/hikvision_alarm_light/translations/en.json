@@ -56,7 +56,7 @@
     "step": {
       "init": {
         "title": "Alarm-light options",
-        "description": "NVR {nvr_host} channels {nvr_channels} -> camera {camera_host} channel {camera_channel}. Set a PTZ preset to 0 to skip that step.",
+        "description": "NVR {nvr_host} channels {nvr_channels} -> camera {camera_host} channel {camera_channel}. After the light turns off the supplement light is switched to IR first and then back to smart mode; the pause between the two is configured below.",
         "data": {
           "name": "Name",
           "trigger_channels": "Alarm channels (comma separated)",
@@ -65,24 +65,19 @@
           "hold_seconds": "Keep light after alarm ends (s)",
           "max_boost_seconds": "Safety limit (s)",
           "brightness": "Brightness (%)",
-          "preset_light_on": "Preset when the light turns on (default 0 = keep B/W)",
-          "preset_day": "Day preset (0 = off)",
-          "preset_night": "Night preset (0 = off)",
-          "preset_auto": "Automatic day/night preset (0 = off)",
-          "preset_interval": "Pause between the two presets (s, 0 = no wait)"
+          "restore_interval": "Pause between IR and smart supplement light (s, 0 = no wait)"
         }
       }
     },
     "error": {
       "invalid_trigger_channels": "Alarm channels must be 1-64, for example 2,6.",
-      "invalid_presets": "PTZ presets must be between 0 and 999 (0 disables the step).",
-      "invalid_preset_interval": "The pause between presets must be between 0 and 10 seconds.",
       "invalid_night_window": "Night start and end must be valid HH:MM times and must differ.",
       "invalid_hold_seconds": "Hold time must be between 10 and 3600 seconds.",
       "invalid_max_boost": "Safety limit must be between 60 and 3600 seconds.",
       "invalid_brightness": "Brightness must be between 1 and 100.",
       "invalid_values": "One or more values are invalid.",
-      "unknown": "Unexpected error; check the Home Assistant logs."
+      "unknown": "Unexpected error; check the Home Assistant logs.",
+      "invalid_restore_interval": "The pause between IR and smart supplement light must be 0-10 seconds."
     },
     "abort": {
       "entry_not_found": "The config entry could not be found."

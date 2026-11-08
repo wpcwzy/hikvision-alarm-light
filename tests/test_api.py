@@ -7,7 +7,7 @@ from datetime import UTC, datetime, time
 from custom_components.hikvision_alarm_light.api import (
     AlertEvent,
     build_boost_xml,
-    build_preset_goto_xml,
+    build_ir_xml,
     extract_multipart_parts,
     parse_alert_event,
     parse_supplement_light,
@@ -121,11 +121,10 @@ def test_is_night() -> None:
     assert is_night(datetime(2026, 11, 7, 12, 0, tzinfo=UTC), time(0, 0), time(23, 59))
 
 
-def test_build_preset_goto_xml() -> None:
-    xml = build_preset_goto_xml(46)
-    assert "<id>46</id>" in xml
-    assert "<PTZPreset" in xml
-    assert 'xmlns="http://www.hikvision.com/ver20/XMLSchema"' in xml
+def test_build_ir_xml() -> None:
+    xml = build_ir_xml()
+    assert "<supplementLightMode>irLight</supplementLightMode>" in xml
+    assert "<irLightBrightness>100</irLightBrightness>" in xml
 
 
 def test_build_aux_light_xml() -> None:

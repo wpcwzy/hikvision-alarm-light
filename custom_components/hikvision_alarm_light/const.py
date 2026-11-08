@@ -32,11 +32,7 @@ CONF_HOLD_SECONDS: Final = "hold_seconds"
 CONF_MAX_BOOST_SECONDS: Final = "max_boost_seconds"
 CONF_BRIGHTNESS: Final = "brightness"
 
-CONF_PRESET_LIGHT_ON: Final = "preset_light_on"
-CONF_PRESET_DAY: Final = "preset_day"
-CONF_PRESET_NIGHT: Final = "preset_night"
-CONF_PRESET_AUTO: Final = "preset_auto"
-CONF_PRESET_INTERVAL: Final = "preset_interval"
+CONF_RESTORE_INTERVAL: Final = "restore_interval"
 
 DEFAULT_NVR_PORT: Final = 80
 DEFAULT_CAMERA_PORT: Final = 80
@@ -59,24 +55,15 @@ MAX_BOOST_SECONDS: Final = 3600
 MIN_BRIGHTNESS: Final = 1
 MAX_BRIGHTNESS: Final = 100
 
-# PTZ presets used to restore the day or night picture after the white light is
-# switched off, followed by the automatic day/night preset.  Set a preset to 0
-# to skip that step.  The light itself is kept in B/W (IR) mode while on, so the
-# "light on" preset defaults to 0 (disabled); set it if a colour picture is
-# really wanted while the white light is active.
-DEFAULT_PRESET_LIGHT_ON: Final = 0
-DEFAULT_PRESET_DAY: Final = 39
-DEFAULT_PRESET_NIGHT: Final = 40
-DEFAULT_PRESET_AUTO: Final = 46
-MIN_PRESET_ID: Final = 0
-MAX_PRESET_ID: Final = 999
-
-# The camera can silently drop a PTZ command that arrives while it is still
-# processing the previous one, so leave a small gap between the two restore
-# presets.  0 disables the wait.
-DEFAULT_PRESET_INTERVAL_SECONDS: Final = 1
-MIN_PRESET_INTERVAL_SECONDS: Final = 0
-MAX_PRESET_INTERVAL_SECONDS: Final = 10
+# While the white light is on the picture is kept in B/W (IR).  After the light
+# is switched off the supplement light is first forced to the IR illuminator and
+# then handed back to the smart (automatic) mode, separated by a short pause so
+# the camera does not drop the second request.  0 disables the pause.
+CONF_SUPPLEMENT_MODE_IR: Final = "irLight"
+CONF_SUPPLEMENT_MODE_SMART: Final = "eventIntelligence"
+DEFAULT_RESTORE_INTERVAL_SECONDS: Final = 1
+MIN_RESTORE_INTERVAL_SECONDS: Final = 0
+MAX_RESTORE_INTERVAL_SECONDS: Final = 10
 
 CONFIG_ENTRY_VERSION: Final = 2
 CONFIG_ENTRY_MINOR_VERSION: Final = 1

@@ -29,11 +29,7 @@ from custom_components.hikvision_alarm_light.const import (
     CONF_NVR_USE_SSL,
     CONF_NVR_USERNAME,
     CONF_NVR_VERIFY_SSL,
-    CONF_PRESET_AUTO,
-    CONF_PRESET_DAY,
-    CONF_PRESET_INTERVAL,
-    CONF_PRESET_LIGHT_ON,
-    CONF_PRESET_NIGHT,
+    CONF_RESTORE_INTERVAL,
     CONF_TRIGGER_CHANNELS,
     CONFIG_ENTRY_VERSION,
     DOMAIN,
@@ -73,11 +69,7 @@ OPTIONS_INPUT = {
     CONF_HOLD_SECONDS: 300,
     CONF_MAX_BOOST_SECONDS: 900,
     CONF_BRIGHTNESS: 100,
-    CONF_PRESET_LIGHT_ON: 0,
-    CONF_PRESET_DAY: 39,
-    CONF_PRESET_NIGHT: 40,
-    CONF_PRESET_AUTO: 46,
-    CONF_PRESET_INTERVAL: 2,
+    CONF_RESTORE_INTERVAL: 2,
 }
 
 
@@ -129,8 +121,7 @@ async def test_config_flow_creates_entry(hass: HomeAssistant) -> None:
     assert result["data"][CONF_CAMERA_HOST] == "192.0.2.10"
     assert result["data"][CONF_CAMERA_CHANNEL] == 1
     assert result["data"][CONF_HOLD_SECONDS] == 120
-    assert result["data"][CONF_PRESET_LIGHT_ON] == 0
-    assert result["data"][CONF_PRESET_NIGHT] == 40
+    assert result["data"][CONF_RESTORE_INTERVAL] == 1
     assert result["result"].unique_id == "SERIAL-192.0.2.2:2+6->SERIAL-192.0.2.10:1"
 
 
@@ -185,11 +176,7 @@ async def test_options_flow_updates_channels_and_presets(hass: HomeAssistant) ->
     assert entry.options[CONF_TRIGGER_CHANNELS] == [2, 6]
     assert entry.options[CONF_NIGHT_START] == "18:00"
     assert entry.options[CONF_HOLD_SECONDS] == 300
-    assert entry.options[CONF_PRESET_LIGHT_ON] == 0
-    assert entry.options[CONF_PRESET_DAY] == 39
-    assert entry.options[CONF_PRESET_NIGHT] == 40
-    assert entry.options[CONF_PRESET_AUTO] == 46
-    assert entry.options[CONF_PRESET_INTERVAL] == 2
+    assert entry.options[CONF_RESTORE_INTERVAL] == 2
 
 
 async def test_options_flow_rejects_invalid_channels(hass: HomeAssistant) -> None:

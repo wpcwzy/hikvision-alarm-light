@@ -28,7 +28,6 @@ ALERT_STREAM_PATH = "/ISAPI/Event/notification/alertStream"
 SUPPLEMENT_LIGHT_PATH = "/ISAPI/Image/channels/{channel}/supplementLight"
 PTZ_CAPABILITIES_PATH = "/ISAPI/PTZCtrl/channels/{channel}/capabilities"
 PTZ_AUX_CONTROL_PATH = "/ISAPI/PTZCtrl/channels/{channel}/auxcontrols/{aux_id}"
-PTZ_PRESET_GOTO_PATH = "/ISAPI/PTZCtrl/channels/{channel}/presets/{preset}/goto"
 
 XML_CONTENT_TYPE = "application/xml; charset=UTF-8"
 BOOST_XML_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
@@ -49,6 +48,13 @@ SMART_XML = """<?xml version="1.0" encoding="UTF-8"?>
 </SupplementLight>
 """
 
+IR_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<SupplementLight version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<supplementLightMode>irLight</supplementLightMode>
+<irLightBrightness>100</irLightBrightness>
+</SupplementLight>
+"""
+
 
 def build_aux_light_xml(on: bool, aux_id: int = 1) -> str:
     """Build the PTZ auxiliary-light command used by the camera web UI.
@@ -64,21 +70,6 @@ def build_aux_light_xml(on: bool, aux_id: int = 1) -> str:
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         f"<PTZAux><id>{aux_id}</id><type>LIGHT</type><status>{status}</status></PTZAux>"
-    )
-
-
-def build_preset_goto_xml(preset_id: int) -> str:
-    """Build the "call preset" command for a PTZ channel.
-
-    Hikvision's PTZ presets are used here as day/night mode switches (for
-    example preset 39 = day/colour, 40 = night, 46 = automatic switching), so
-    the camera can be forced into colour rendering while the white light is
-    on and returned to its normal behaviour afterwards.
-    """
-    return (
-        '<?xml version="1.0" encoding="UTF-8"?>'
-        '<PTZPreset xmlns="http://www.hikvision.com/ver20/XMLSchema">'
-        f"<id>{int(preset_id)}</id></PTZPreset>"
     )
 
 
@@ -269,6 +260,11 @@ def build_boost_xml(brightness: int = 100) -> str:
 def build_smart_xml() -> str:
     """Return the canonical "smart supplement light" XML."""
     return SMART_XML
+
+
+def build_ir_xml() -> str:
+    """Return XML that switches the supplement light to the IR illuminator."""
+    return IR_XML
 
 
 def extract_multipart_parts(
@@ -517,37 +513,6 @@ class HikvisionIsapiClient:
         if status_code != "1":
             raise HikvisionResponseError(
                 status_string or "The camera rejected the aux-light command.",
-                status_code=status_code or None,
-                status_string=status_string or None,
-                sub_status_code=sub_status_code or None,
-            )
-
-    def goto_preset(self, channel: int, preset_id: int) -> None:
-        """Call a stored PTZ preset on the camera channel.
-
-        The alarm-light integration uses dedicated day/night presets to force
-        a colour picture while the white light is active and to restore the
-        automatic day/night behaviour afterwards.
-        """
-        response_text = self._request(
-            "PUT",
-            PTZ_PRESET_GOTO_PATH.format(channel=channel, preset=preset_id),
-            body=build_preset_goto_xml(preset_id),
-        )
-        try:
-            root = ET.fromstring(response_text) if response_text.strip() else None
-        except ET.ParseError:
-            root = None
-        if root is None:
-            return
-        if local_name(root.tag) != "ResponseStatus":
-            raise HikvisionResponseError(
-                f"Unexpected preset-goto response: <{local_name(root.tag)}>."
-            )
-        status_code, status_string, sub_status_code = _response_status(root)
-        if status_code != "1":
-            raise HikvisionResponseError(
-                status_string or "The camera rejected the preset command.",
                 status_code=status_code or None,
                 status_string=status_string or None,
                 sub_status_code=sub_status_code or None,

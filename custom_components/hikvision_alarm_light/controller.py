@@ -20,6 +20,7 @@ from .api import (
     HikvisionError,
     HikvisionIsapiClient,
     build_boost_xml,
+    build_ir_xml,
     build_smart_xml,
 )
 from .const import (
@@ -42,25 +43,15 @@ from .const import (
     CONF_NVR_USE_SSL,
     CONF_NVR_USERNAME,
     CONF_NVR_VERIFY_SSL,
-    CONF_PRESET_AUTO,
-    CONF_PRESET_DAY,
-    CONF_PRESET_INTERVAL,
-    CONF_PRESET_LIGHT_ON,
-    CONF_PRESET_NIGHT,
+    CONF_RESTORE_INTERVAL,
     CONF_TRIGGER_CHANNEL,
     CONF_TRIGGER_CHANNELS,
-    DEFAULT_PRESET_AUTO,
-    DEFAULT_PRESET_DAY,
-    DEFAULT_PRESET_INTERVAL_SECONDS,
-    DEFAULT_PRESET_LIGHT_ON,
-    DEFAULT_PRESET_NIGHT,
+    DEFAULT_RESTORE_INTERVAL_SECONDS,
     DEFAULT_TRIGGER_CHANNEL,
     DOMAIN,
     EVENT_TYPE_FIELDDETECTION,
-    MAX_PRESET_ID,
-    MAX_PRESET_INTERVAL_SECONDS,
-    MIN_PRESET_ID,
-    MIN_PRESET_INTERVAL_SECONDS,
+    MAX_RESTORE_INTERVAL_SECONDS,
+    MIN_RESTORE_INTERVAL_SECONDS,
     STORE_VERSION,
 )
 
@@ -91,11 +82,7 @@ class LinkSettings:
     hold_seconds: int
     max_boost_seconds: int
     brightness: int
-    preset_light_on: int
-    preset_day: int
-    preset_night: int
-    preset_auto: int
-    preset_interval_seconds: int
+    restore_interval_seconds: int
 
     @classmethod
     def from_entry(cls, data: dict) -> LinkSettings:
@@ -122,16 +109,8 @@ class LinkSettings:
             hold_seconds=int(data[CONF_HOLD_SECONDS]),
             max_boost_seconds=int(data[CONF_MAX_BOOST_SECONDS]),
             brightness=int(data[CONF_BRIGHTNESS]),
-            preset_light_on=_parse_preset(
-                data.get(CONF_PRESET_LIGHT_ON), DEFAULT_PRESET_LIGHT_ON
-            ),
-            preset_day=_parse_preset(data.get(CONF_PRESET_DAY), DEFAULT_PRESET_DAY),
-            preset_night=_parse_preset(
-                data.get(CONF_PRESET_NIGHT), DEFAULT_PRESET_NIGHT
-            ),
-            preset_auto=_parse_preset(data.get(CONF_PRESET_AUTO), DEFAULT_PRESET_AUTO),
-            preset_interval_seconds=_parse_preset_interval(
-                data.get(CONF_PRESET_INTERVAL)
+            restore_interval_seconds=_parse_restore_interval(
+                data.get(CONF_RESTORE_INTERVAL)
             ),
         )
 
@@ -161,27 +140,16 @@ def normalise_trigger_channels(value: object) -> tuple[int, ...]:
     return tuple(sorted(channels))
 
 
-def _parse_preset(value: object, default: int) -> int:
-    """Return a valid PTZ preset number, falling back to *default*."""
+def _parse_restore_interval(value: object) -> int:
+    """Return the pause between the IR and smart supplement-light restores."""
     if value is None or value == "":
-        return default
-    try:
-        preset = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return default
-    return preset if MIN_PRESET_ID <= preset <= MAX_PRESET_ID else default
-
-
-def _parse_preset_interval(value: object) -> int:
-    """Return the wait between the two restore presets in whole seconds."""
-    if value is None or value == "":
-        return DEFAULT_PRESET_INTERVAL_SECONDS
+        return DEFAULT_RESTORE_INTERVAL_SECONDS
     try:
         interval = int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
-        return DEFAULT_PRESET_INTERVAL_SECONDS
-    if not MIN_PRESET_INTERVAL_SECONDS <= interval <= MAX_PRESET_INTERVAL_SECONDS:
-        return DEFAULT_PRESET_INTERVAL_SECONDS
+        return DEFAULT_RESTORE_INTERVAL_SECONDS
+    if not MIN_RESTORE_INTERVAL_SECONDS <= interval <= MAX_RESTORE_INTERVAL_SECONDS:
+        return DEFAULT_RESTORE_INTERVAL_SECONDS
     return interval
 
 
@@ -541,38 +509,25 @@ class AlarmLightController:
             self.settings.camera_host,
             self.settings.camera_channel,
         )
-        # Force the ball camera into the day/colour preset while the light is
-        # on; this is best effort and must not fail the light boost.
-        await self._async_call_preset(
-            self.settings.preset_light_on, "light on (day/colour)"
-        )
 
-    async def _async_preset_delay(self, seconds: int) -> None:
-        """Wait between two PTZ commands so the camera does not drop one."""
+    async def _async_restore_delay(self, seconds: int) -> None:
+        """Wait between supplement-light commands so none gets dropped."""
         await asyncio.sleep(seconds)
 
-    def _preset_for_restore(self, now: datetime) -> int:
-        """Pick the day or night preset for the current moment."""
-        if is_night(now, self.settings.night_start, self.settings.night_end):
-            return self.settings.preset_night
-        return self.settings.preset_day
-
-    async def _async_call_preset(self, preset_id: int, purpose: str) -> None:
-        """Call a PTZ preset; failures are logged but never fatal."""
-        if preset_id <= 0:
-            return
+    async def _async_set_supplement_mode(self, xml_text: str, label: str) -> bool:
+        """Switch the camera supplement light to a mode; failures are logged."""
         try:
             await self.hass.async_add_executor_job(
-                self.camera_client.goto_preset,
+                self.camera_client.put_supplement_light,
                 self.settings.camera_channel,
-                preset_id,
+                xml_text,
             )
-        except Exception as err:  # noqa: BLE001 - presets must never break lighting
-            _LOGGER.warning(
-                "Could not call PTZ preset %s (%s): %s", preset_id, purpose, err
-            )
-        else:
-            _LOGGER.debug("Called PTZ preset %s (%s)", preset_id, purpose)
+        except HikvisionError as err:
+            _LOGGER.warning("Could not switch supplement light to %s: %s", label, err)
+            self._last_error = str(err)
+            return False
+        _LOGGER.debug("Supplement light switched to %s", label)
+        return True
 
     async def _async_restore_light(self) -> None:
         if self._light_control == "aux":
@@ -580,6 +535,23 @@ class AlarmLightController:
                 self.camera_client.set_aux_light,
                 self.settings.camera_channel,
                 False,
+            )
+            # The PTZ presets used previously for day/night switching also moved
+            # the camera and could be dropped by the device.  Use the supplement
+            # light API instead: force the IR illuminator first, then hand the
+            # light back to the smart/automatic mode.  Keep a short pause in
+            # between so the camera does not drop the second request.
+            ir_ok = await self._async_set_supplement_mode(
+                build_ir_xml(), "infrared (night vision)"
+            )
+            if ir_ok and self.settings.restore_interval_seconds > 0:
+                _LOGGER.debug(
+                    "Waiting %ss before restoring the smart supplement light",
+                    self.settings.restore_interval_seconds,
+                )
+                await self._async_restore_delay(self.settings.restore_interval_seconds)
+            smart_ok = await self._async_set_supplement_mode(
+                build_smart_xml(), "smart/automatic"
             )
             state = await self.hass.async_add_executor_job(
                 self.camera_client.get_supplement_light,
@@ -589,34 +561,15 @@ class AlarmLightController:
             self._restore_xml = None
             self._camera_mode = state.mode
             self._boost_ends_at = None
-            self._last_error = None
+            if smart_ok:
+                self._last_error = None
             self._cancel_restore()
             self._cancel_guard()
             await self._save_state()
             self._notify()
             _LOGGER.info(
-                "Switched off PTZ aux LIGHT; supplement mode remains %s",
+                "Switched off PTZ aux LIGHT; supplement mode restored to %s",
                 state.mode,
-            )
-            # After switching the light off, first return to the day or night
-            # picture for the current time, then hand control back to the
-            # camera's automatic day/night switching.  The camera can silently
-            # drop a PTZ command that arrives while it is still busy with the
-            # previous one, so leave a configurable pause in between.
-            first_preset = self._preset_for_restore(dt_util.now())
-            await self._async_call_preset(first_preset, "light off (day/night mode)")
-            if (
-                first_preset > 0
-                and self.settings.preset_auto > 0
-                and self.settings.preset_interval_seconds > 0
-            ):
-                _LOGGER.debug(
-                    "Waiting %ss before the automatic day/night preset",
-                    self.settings.preset_interval_seconds,
-                )
-                await self._async_preset_delay(self.settings.preset_interval_seconds)
-            await self._async_call_preset(
-                self.settings.preset_auto, "light off (auto day/night)"
             )
             return
 
