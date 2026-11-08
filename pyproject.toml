@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hikvision-alarm-light"
-version = "1.4.0"
+version = "1.5.0"
 description = "Home Assistant: Hikvision NVR intrusion alarm triggers camera white light"
 requires-python = ">=3.12"
 dependencies = ["requests>=2.28"]

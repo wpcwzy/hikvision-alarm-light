@@ -269,6 +269,44 @@ async def test_restore_continues_when_white_step_fails(
     assert camera.mode == "eventIntelligence"
 
 
+async def test_manual_light_switch(hass: HomeAssistant) -> None:
+    entry, camera, _reader = await setup_entry(hass)
+    light_id = entity_id(hass, entry, "switch", "light")
+    assert hass.states.get(light_id).state == "off"
+
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": light_id}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert camera.aux_on is True
+    assert hass.states.get(light_id).state == "on"
+
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": light_id}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert camera.aux_on is False
+    assert camera.supplement_history == ["colorVuWhiteLight", "eventIntelligence"]
+    assert hass.states.get(light_id).state == "off"
+
+
+async def test_light_switch_follows_alarm(hass: HomeAssistant) -> None:
+    entry, camera, reader = await setup_entry(hass)
+    light_id = entity_id(hass, entry, "switch", "light")
+
+    reader.emit_event(event(2, "active"))
+    await hass.async_block_till_done()
+    assert camera.aux_on is True
+    assert hass.states.get(light_id).state == "on"
+
+    reader.emit_event(event(2, "inactive"))
+    await hass.async_block_till_done()
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=130))
+    await hass.async_block_till_done()
+    assert camera.aux_on is False
+    assert hass.states.get(light_id).state == "off"
+
+
 async def test_button_and_switch(hass: HomeAssistant) -> None:
     entry, camera, reader = await setup_entry(hass)
     test_button = entity_id(hass, entry, "button", "test_boost")

@@ -355,6 +355,31 @@ class AlarmLightController:
         await self._async_restore_light()
         self._notify()
 
+    async def async_turn_light_on(self) -> None:
+        """Switch the alarm light on and keep it on until switched off.
+
+        The safety guard still switches the light off after the configured
+        ``max_boost_seconds`` so a forgotten switch cannot leave it on forever.
+        """
+        if self._boost_active:
+            return
+        self._cancel_restore()
+        await self._async_boost()
+        self._schedule_guard()
+        self._notify()
+        _LOGGER.info("Alarm light switched on manually")
+
+    async def async_turn_light_off(self) -> None:
+        """Switch the alarm light off and restore the supplement-light modes."""
+        self._cancel_restore()
+        self._cancel_guard()
+        if not self._boost_active:
+            self._notify()
+            return
+        await self._async_restore_light()
+        self._notify()
+        _LOGGER.info("Alarm light switched off manually")
+
     def _reader_on_event(self, event: AlertEvent) -> None:
         try:
             self.hass.loop.call_soon_threadsafe(self._handle_event, event)
