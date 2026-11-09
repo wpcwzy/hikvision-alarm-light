@@ -16,7 +16,7 @@
       },
       "camera": {
         "title": "Connect to the light camera",
-        "description": "NVR {nvr_host}, alarm channels {trigger_channels}. Enter the PTZ/camera whose supplement light should be switched, its light channels (comma separated, for example 1, 2), the night window and hold time.",
+        "description": "NVR {nvr_host}, alarm channels {trigger_channels}. Enter the PTZ/camera whose supplement light should be switched, its light channels (comma separated, for example 1, 2), the night mode, and timing.",
         "data": {
           "camera_host": "Camera address",
           "camera_port": "Port",
@@ -30,7 +30,8 @@
           "hold_seconds": "Keep light after alarm ends (s)",
           "max_boost_seconds": "Safety limit (s)",
           "brightness": "Brightness (%)",
-          "camera_channels": "Light channels (comma separated)"
+          "camera_channels": "Light channels (comma separated)",
+          "follow_sun": "Follow sunrise/sunset (otherwise use fixed window)"
         }
       }
     },
@@ -57,7 +58,7 @@
     "step": {
       "init": {
         "title": "Alarm-light options",
-        "description": "NVR {nvr_host} alarm channels {trigger_channels} -> camera {camera_host} light channels {camera_channels}. On alarm the supplement light switches to white light (always on, fixed brightness); after the alarm ends it switches back to smart mode after the hold time.",
+        "description": "NVR {nvr_host} alarm channels {trigger_channels} -> camera {camera_host} light channels {camera_channels}. On alarm the supplement light switches to white light (always on, fixed brightness); after the alarm ends it switches back to smart mode after the hold time. The night window follows Home Assistant sunrise/sunset by default.",
         "data": {
           "name": "Name",
           "trigger_channels": "Alarm channels (comma separated)",
@@ -66,7 +67,8 @@
           "hold_seconds": "Keep light after alarm ends (s)",
           "max_boost_seconds": "Safety limit (s)",
           "brightness": "Brightness (%)",
-          "camera_channels": "Light channels (comma separated)"
+          "camera_channels": "Light channels (comma separated)",
+          "follow_sun": "Follow sunrise/sunset (otherwise use fixed window)"
         }
       }
     },

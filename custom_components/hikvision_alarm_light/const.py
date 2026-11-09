@@ -28,6 +28,7 @@ CONF_CAMERA_CHANNEL: Final = "camera_channel"
 CONF_CAMERA_CHANNELS: Final = "camera_channels"
 
 CONF_NAME: Final = "name"
+CONF_FOLLOW_SUN: Final = "follow_sun"
 CONF_NIGHT_START: Final = "night_start"
 CONF_NIGHT_END: Final = "night_end"
 CONF_HOLD_SECONDS: Final = "hold_seconds"
@@ -41,6 +42,7 @@ DEFAULT_TRIGGER_CHANNELS: Final = (2,)
 DEFAULT_CAMERA_CHANNEL: Final = 1
 DEFAULT_CAMERA_CHANNELS: Final = (1,)
 DEFAULT_NAME: Final = "后院入侵补光联动"
+DEFAULT_FOLLOW_SUN: Final = True
 DEFAULT_NIGHT_START: Final = time(18, 0)
 DEFAULT_NIGHT_END: Final = time(6, 0)
 DEFAULT_HOLD_SECONDS: Final = 300
@@ -68,5 +70,9 @@ CONFIG_ENTRY_VERSION: Final = 3
 CONFIG_ENTRY_MINOR_VERSION: Final = 1
 
 EVENT_TYPE_FIELDDETECTION: Final = "fielddetection"
+
+# Home Assistant's sun integration provides the sunrise/sunset times shown by
+# the weather card; solarlight follows it unless the fixed window is configured.
+SUN_ENTITY_ID: Final = "sun.sun"
 
 STORE_VERSION: Final = 1

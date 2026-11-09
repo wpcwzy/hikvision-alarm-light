@@ -1,7 +1,8 @@
 # 海康 NVR 区域入侵 → 球机白光补光（Home Assistant）
 
 当 NVR 的**任意一个指定通道**（可配置多个，例如 2 和 6）在夜间发生
-“区域入侵 / 周界防范”报警时，通过 ISAPI 补光接口把海康球机的**所有补光通道**
+“区域入侵 / 周界防范”报警时（夜间判断默认跟随 Home Assistant 的日出日落），
+通过 ISAPI 补光接口把海康球机的**所有补光通道**
 （可配置多个，例如球机的通道 1 和通道 2）切换为**白光补光**：
 
 - 补光模式：`colorVuWhiteLight`（白光补光）
@@ -24,7 +25,8 @@
 - 支持配置**多个 NVR 报警通道**（例如 `2,6`），任一通道的 `fielddetection`
   （区域入侵）报警都会触发。
 - 支持配置**多个球机补光通道**（例如 `1,2`），报警时所有通道一起切换补光模式。
-- 仅在可配置的夜间时段（默认 `18:00–06:00`）自动触发。
+- 夜间判断默认跟随 Home Assistant 的 **`sun.sun`**（日出日落，与 HA 天气卡片
+  显示的一致）；也可以关闭该选项，改用固定的夜间时段（默认 `18:00–06:00`）。
 - 报警时：白光补光、亮度调节模式常开、亮度 100%（可通过选项修改亮度）。
 - 报警结束后保持可配置时间（默认 300 秒）再切回智能补光；
   持续报警时安全上限（默认 900 秒）会强制切回智能补光。
@@ -46,6 +48,7 @@
   `colorVuWhiteLight` + `whiteLightBrightness=100` +
   `mixedLightBrightnessRegulatMode=on`（常开） → `eventIntelligence`
 - Home Assistant 2026.8.3（实际部署），2025.1.4（自动化测试）
+- 夜间判断读取标准 `sun.sun`（Sun 集成）；若该实体不存在则自动回退到固定时段
 
 ## 安装
 
@@ -84,7 +87,8 @@
 | 摄像机地址 | `192.168.1.11` | 球机/摄像机的 IP |
 | 端口 | `80` | |
 | 补光通道 | `1, 2` | 逗号分隔；报警时这些图像通道一起切换补光模式 |
-| 夜间开始/结束 | `18:00` / `06:00` | 支持跨午夜；两者不能相同 |
+| 跟随日出日落 | 是 | 默认读取 `sun.sun`，日出后关灯、日落后允许报警补光，与 HA 天气卡片显示的日出日落一致；关闭后使用下面的固定时段 |
+| 夜间开始/结束 | `18:00` / `06:00` | 仅“跟随日出日落”关闭时使用；支持跨午夜；两者不能相同 |
 | 报警结束保持 | `300` 秒 | `inactive` 后再保持多久后切回智能补光 |
 | 安全上限 | `900` 秒 | 持续报警时的兜底，超时强制切回智能补光 |
 | 亮度 | `100` | 白光补光亮度（0–100） |
@@ -184,10 +188,19 @@ PUT /ISAPI/Image/channels/1/supplementLight
 这样智能补光和红外灯继续按摄像机自身策略工作，不会出现“关灯后红外灯也熄灭”
 的问题（这正是弃用 PTZ 辅助 LIGHT 接口的原因）。
 
-### 夜间判断
+### 夜间判断（跟随日出日落）
 
-使用 Home Assistant 本地时区和配置的时间窗口。默认 `18:00–06:00`，与摄像机
-自身的补光时间段一致。
+默认使用 Home Assistant 标准 **Sun 集成** 的 `sun.sun` 实体：
+
+- `sun.sun` 状态为 `below_horizon`（日落后到日出前）时才算夜间，允许报警补光；
+- `sun.sun` 状态为 `above_horizon` 时视为白天，报警不会自动开灯；
+- `sun.sun` 的 `next_rising` / `next_setting` 属性只作为状态异常时的兜底。
+
+Home Assistant 天气卡片上显示的日出/日落时间就来自 Sun 集成，因此本插件的
+夜间判断与天气显示自然保持一致，不需要手动调整时间。
+
+如果设备上不存在 `sun.sun` 实体，插件会在日志中记录一条警告，并自动回退到
+配置的固定夜间时段（默认 `18:00–06:00`，使用 HA 本地时区）。
 
 ## 安全与恢复
 
@@ -203,9 +216,10 @@ PUT /ISAPI/Image/channels/1/supplementLight
 | --- | --- |
 | 事件流未连接 | 检查 NVR 地址/凭据；确认账号可访问 ISAPI；查看实体属性 `stream_error` |
 | 补光接口返回 404 | 该型号可能没有 `/ISAPI/Image/channels/<ch>/supplementLight`；在浏览器/curl 验证 |
-| 报警时灯不亮 | 检查夜间时段、自动联动开关、报警通道列表（选项里是否包含该通道）、补光通道是否正确 |
+| 报警时灯不亮 | 检查“跟随日出日落”/夜间时段、自动联动开关、报警通道列表（选项里是否包含该通道）、补光通道是否正确 |
+| 日志提示找不到 sun.sun | HA 未启用 Sun 集成或未加载；在“设置 → 设备与服务”中确认 Sun 已启用，或关闭“跟随日出日落”改用固定时段 |
 | 灯一直亮 | 使用“关闭灯光”按钮或 HomeKit“后院灯”开关；检查安全上限；重启 HA 时会自动切回智能补光 |
-| 灭灯后红外灯也不亮 | 本集成已弃用 PTZ 辅助 LIGHT；确认 HACS 中已更新到 v1.6.0+ 并重启 HA |
+| 灭灯后红外灯也不亮 | 本集成已弃用 PTZ 辅助 LIGHT；确认 HACS 中已更新到 v1.6.1+ 并重启 HA |
 | 灭灯后没回到智能补光 | 查看日志中的 `Could not restore smart supplement light`，检查补光通道与权限，可用 curl 手动验证 |
 | 手机收不到通知 | 本集成只控制补光灯；NVR 报警推送仍由海康 Hik-Connect/上传中心负责 |
 
@@ -244,15 +258,15 @@ python3 -m venv .venv
 纯函数测试覆盖事件解析、multipart 分帧、补光 XML 与夜间判断；
 Home Assistant 测试覆盖配置流、选项流、旧配置迁移、多报警通道任一触发、
 多补光通道同时切换、亮灯失败回滚、inactive 后保持恢复、安全上限、手动开关、
-按钮和自动联动开关。
+按钮和自动联动开关；夜间判断同时覆盖 `sun.sun` 日间/夜间状态以及缺失时回退固定时段。
 
 ### 打包发布
 
 ```bash
-.venv/bin/python scripts/build_release.py --version 1.6.0
-git archive --format=zip --prefix=hikvision-alarm-light-1.6.0/ \
-  -o dist/hikvision-alarm-light-1.6.0.zip v1.6.0
-gh release create v1.6.0 --title "v1.6.0" --notes-file <说明文件> \
+.venv/bin/python scripts/build_release.py --version 1.7.0
+git archive --format=zip --prefix=hikvision-alarm-light-1.7.0/ \
+  -o dist/hikvision-alarm-light-1.7.0.zip v1.7.0
+gh release create v1.7.0 --title "v1.7.0" --notes-file <说明文件> \
   dist/hikvision_alarm_light_manual_install.zip \
   dist/hikvision_alarm_light_custom_components.zip
 ```

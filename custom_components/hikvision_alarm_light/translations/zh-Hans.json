@@ -16,7 +16,7 @@
       },
       "camera": {
         "title": "连接补光摄像机",
-        "description": "NVR {nvr_host}，报警通道 {trigger_channels}。请输入需要切换补光的球机信息、补光通道（多个用逗号分隔，例如 1, 2）、夜间时段和保持时间。",
+        "description": "NVR {nvr_host}，报警通道 {trigger_channels}。请输入需要切换补光的球机信息、补光通道（多个用逗号分隔，例如 1, 2）、夜间判断方式、保持时间等。",
         "data": {
           "camera_host": "摄像机地址",
           "camera_port": "端口",
@@ -30,7 +30,8 @@
           "hold_seconds": "报警结束后保持（秒）",
           "max_boost_seconds": "安全上限（秒）",
           "brightness": "亮度（%）",
-          "camera_channels": "补光通道（逗号分隔）"
+          "camera_channels": "补光通道（逗号分隔）",
+          "follow_sun": "跟随日出日落判断夜间（关闭则用固定时段）"
         }
       }
     },
@@ -57,7 +58,7 @@
     "step": {
       "init": {
         "title": "报警补光选项",
-        "description": "NVR {nvr_host} 报警通道 {trigger_channels} → 摄像机 {camera_host} 补光通道 {camera_channels}。报警时补光切为白光（常开、亮度固定），报警结束后按保持时间切回智能补光。",
+        "description": "NVR {nvr_host} 报警通道 {trigger_channels} → 摄像机 {camera_host} 补光通道 {camera_channels}。报警时补光切为白光（常开、亮度固定），报警结束后按保持时间切回智能补光。默认跟随 Home Assistant 日出日落判断夜间。",
         "data": {
           "name": "名称",
           "trigger_channels": "报警通道（逗号分隔）",
@@ -66,7 +67,8 @@
           "hold_seconds": "报警结束后保持（秒）",
           "max_boost_seconds": "安全上限（秒）",
           "brightness": "亮度（%）",
-          "camera_channels": "补光通道（逗号分隔）"
+          "camera_channels": "补光通道（逗号分隔）",
+          "follow_sun": "跟随日出日落判断夜间（关闭则用固定时段）"
         }
       }
     },

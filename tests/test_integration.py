@@ -26,6 +26,7 @@ from custom_components.hikvision_alarm_light.const import (
     CONF_CAMERA_USE_SSL,
     CONF_CAMERA_USERNAME,
     CONF_CAMERA_VERIFY_SSL,
+    CONF_FOLLOW_SUN,
     CONF_HOLD_SECONDS,
     CONF_MAX_BOOST_SECONDS,
     CONF_NAME,
@@ -72,6 +73,7 @@ def make_data(
         CONF_NAME: "后院入侵补光联动",
         CONF_NIGHT_START: night_start,
         CONF_NIGHT_END: night_end,
+        CONF_FOLLOW_SUN: False,
         CONF_HOLD_SECONDS: 120,
         CONF_MAX_BOOST_SECONDS: 300,
         CONF_BRIGHTNESS: 100,
@@ -326,3 +328,35 @@ async def test_migration_from_v1_entry(hass: HomeAssistant) -> None:
     reader.emit_event(event(2, "active"))
     await hass.async_block_till_done()
     assert camera.modes == {1: WHITE}
+
+
+async def test_follow_sun_controls_alarm_trigger(hass: HomeAssistant) -> None:
+    """With follow_sun the alarm only lights up when the sun is down."""
+    data = make_data()
+    data[CONF_FOLLOW_SUN] = True
+    _entry, camera, reader = await setup_entry(hass, make_entry(data=data))
+
+    hass.states.async_set("sun.sun", "above_horizon")
+    reader.emit_event(event(2, "active"))
+    await hass.async_block_till_done()
+    assert camera.put_calls == []
+
+    hass.states.async_set("sun.sun", "below_horizon")
+    reader.emit_event(event(2, "active"))
+    await hass.async_block_till_done()
+    assert camera.modes == {1: WHITE, 2: WHITE}
+
+
+async def test_follow_sun_falls_back_to_fixed_window(
+    hass: HomeAssistant,
+) -> None:
+    """Without a sun entity the configured fixed window is used."""
+    data = make_data()
+    data[CONF_FOLLOW_SUN] = True
+    _entry, camera, reader = await setup_entry(hass, make_entry(data=data))
+
+    # The test data window covers the whole day, so the alarm is treated as
+    # night even though no sun.sun state exists.
+    reader.emit_event(event(2, "active"))
+    await hass.async_block_till_done()
+    assert camera.modes == {1: WHITE, 2: WHITE}

@@ -42,6 +42,7 @@ from .const import (
     CONF_CAMERA_USE_SSL,
     CONF_CAMERA_USERNAME,
     CONF_CAMERA_VERIFY_SSL,
+    CONF_FOLLOW_SUN,
     CONF_HOLD_SECONDS,
     CONF_MAX_BOOST_SECONDS,
     CONF_NAME,
@@ -61,6 +62,7 @@ from .const import (
     DEFAULT_CAMERA_CHANNEL,
     DEFAULT_CAMERA_CHANNELS,
     DEFAULT_CAMERA_PORT,
+    DEFAULT_FOLLOW_SUN,
     DEFAULT_HOLD_SECONDS,
     DEFAULT_MAX_BOOST_SECONDS,
     DEFAULT_NAME,
@@ -127,6 +129,7 @@ CAMERA_SCHEMA = vol.Schema(
         vol.Required(
             CONF_NIGHT_END, default=DEFAULT_NIGHT_END.strftime("%H:%M")
         ): TextSelector(),
+        vol.Required(CONF_FOLLOW_SUN, default=DEFAULT_FOLLOW_SUN): BooleanSelector(),
         vol.Required(CONF_HOLD_SECONDS, default=DEFAULT_HOLD_SECONDS): NumberSelector(
             NumberSelectorConfig(
                 min=MIN_HOLD_SECONDS,
@@ -339,6 +342,7 @@ class HikvisionAlarmLightConfigFlow(ConfigFlow, domain=DOMAIN):
             camera_channels = _parse_channels(user_input[CONF_CAMERA_CHANNELS])
             night_start = _parse_time(user_input[CONF_NIGHT_START])
             night_end = _parse_time(user_input[CONF_NIGHT_END])
+            follow_sun = bool(user_input[CONF_FOLLOW_SUN])
             hold_seconds = int(user_input[CONF_HOLD_SECONDS])
             max_boost_seconds = int(user_input[CONF_MAX_BOOST_SECONDS])
             brightness = int(user_input[CONF_BRIGHTNESS])
@@ -408,6 +412,7 @@ class HikvisionAlarmLightConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_NAME: name,
                         CONF_NIGHT_START: night_start.strftime("%H:%M"),
                         CONF_NIGHT_END: night_end.strftime("%H:%M"),
+                        CONF_FOLLOW_SUN: follow_sun,
                         CONF_HOLD_SECONDS: hold_seconds,
                         CONF_MAX_BOOST_SECONDS: max_boost_seconds,
                         CONF_BRIGHTNESS: brightness,
@@ -460,6 +465,7 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
         current_name = str(merged.get(CONF_NAME, DEFAULT_NAME))
         current_start = str(merged.get(CONF_NIGHT_START, "18:00"))
         current_end = str(merged.get(CONF_NIGHT_END, "06:00"))
+        current_follow_sun = bool(merged.get(CONF_FOLLOW_SUN, DEFAULT_FOLLOW_SUN))
         current_hold = int(merged.get(CONF_HOLD_SECONDS, DEFAULT_HOLD_SECONDS))
         current_max = int(merged.get(CONF_MAX_BOOST_SECONDS, DEFAULT_MAX_BOOST_SECONDS))
         current_brightness = int(merged.get(CONF_BRIGHTNESS, DEFAULT_BRIGHTNESS))
@@ -471,6 +477,7 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
             camera_channels = _parse_channels(user_input.get(CONF_CAMERA_CHANNELS))
             night_start = _parse_time(user_input.get(CONF_NIGHT_START))
             night_end = _parse_time(user_input.get(CONF_NIGHT_END))
+            follow_sun = bool(user_input.get(CONF_FOLLOW_SUN, True))
             try:
                 hold_seconds = int(user_input[CONF_HOLD_SECONDS])
                 max_boost_seconds = int(user_input[CONF_MAX_BOOST_SECONDS])
@@ -511,6 +518,7 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
                         CONF_NAME: name,
                         CONF_NIGHT_START: night_start.strftime("%H:%M"),
                         CONF_NIGHT_END: night_end.strftime("%H:%M"),
+                        CONF_FOLLOW_SUN: follow_sun,
                         CONF_HOLD_SECONDS: hold_seconds,
                         CONF_MAX_BOOST_SECONDS: max_boost_seconds,
                         CONF_BRIGHTNESS: brightness,
@@ -532,6 +540,9 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
             )
             current_start = str(user_input.get(CONF_NIGHT_START, current_start))
             current_end = str(user_input.get(CONF_NIGHT_END, current_end))
+            current_follow_sun = bool(
+                user_input.get(CONF_FOLLOW_SUN, current_follow_sun)
+            )
             try:
                 current_hold = int(user_input[CONF_HOLD_SECONDS])
                 current_max = int(user_input[CONF_MAX_BOOST_SECONDS])
@@ -556,6 +567,9 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
                         CONF_NIGHT_START, default=current_start
                     ): TextSelector(),
                     vol.Required(CONF_NIGHT_END, default=current_end): TextSelector(),
+                    vol.Required(
+                        CONF_FOLLOW_SUN, default=current_follow_sun
+                    ): BooleanSelector(),
                     vol.Required(
                         CONF_HOLD_SECONDS, default=current_hold
                     ): NumberSelector(

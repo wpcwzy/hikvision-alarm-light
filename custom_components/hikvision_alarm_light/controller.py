@@ -43,6 +43,7 @@ from .const import (
     CONF_CAMERA_USE_SSL,
     CONF_CAMERA_USERNAME,
     CONF_CAMERA_VERIFY_SSL,
+    CONF_FOLLOW_SUN,
     CONF_HOLD_SECONDS,
     CONF_MAX_BOOST_SECONDS,
     CONF_NAME,
@@ -57,12 +58,14 @@ from .const import (
     CONF_TRIGGER_CHANNEL,
     CONF_TRIGGER_CHANNELS,
     DEFAULT_CAMERA_CHANNEL,
+    DEFAULT_FOLLOW_SUN,
     DEFAULT_NAME,
     DEFAULT_TRIGGER_CHANNEL,
     DOMAIN,
     EVENT_TYPE_FIELDDETECTION,
     RESTORE_LIGHT_MODE,
     STORE_VERSION,
+    SUN_ENTITY_ID,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -87,6 +90,7 @@ class LinkSettings:
     camera_username: str
     camera_password: str
     camera_channels: tuple[int, ...]
+    follow_sun: bool
     night_start: time
     night_end: time
     hold_seconds: int
@@ -117,6 +121,7 @@ class LinkSettings:
                 data.get(CONF_CAMERA_CHANNELS, data.get(CONF_CAMERA_CHANNEL)),
                 DEFAULT_CAMERA_CHANNEL,
             ),
+            follow_sun=bool(data.get(CONF_FOLLOW_SUN, DEFAULT_FOLLOW_SUN)),
             night_start=_parse_time(data[CONF_NIGHT_START]),
             night_end=_parse_time(data[CONF_NIGHT_END]),
             hold_seconds=int(data[CONF_HOLD_SECONDS]),
@@ -239,6 +244,7 @@ class AlarmLightController:
         self._last_error: str | None = None
         self._restore_unsub: CALLBACK_TYPE | None = None
         self._guard_unsub: CALLBACK_TYPE | None = None
+        self._sun_missing_logged = False
         self._running = False
 
         factory = reader_factory or AlertStreamReader
@@ -394,9 +400,7 @@ class AlarmLightController:
         if event.event_state == "active":
             self._alarm_active = True
             self._last_alarm = now
-            if self._enabled and is_night(
-                now, self.settings.night_start, self.settings.night_end
-            ):
+            if self._enabled and self._is_night_now(now):
                 try:
                     await self._async_boost()
                 except HikvisionError as err:
@@ -411,6 +415,49 @@ class AlarmLightController:
             if self._boost_active:
                 self._schedule_restore(self.settings.hold_seconds)
             self._notify()
+
+    def _is_night_now(self, now: datetime) -> bool:
+        """Return whether it is currently night.
+
+        By default the sun integration's ``sun.sun`` entity is used so the
+        night window follows the sunrise/sunset times shown by the Home
+        Assistant weather card.  If the sun entity is missing the configured
+        fixed window is used as a fallback.
+        """
+        if self.settings.follow_sun:
+            sun = self.hass.states.get(SUN_ENTITY_ID)
+            if sun is not None:
+                self._sun_missing_logged = False
+                if sun.state == "below_horizon":
+                    _LOGGER.debug("Night check: sun is below the horizon")
+                    return True
+                if sun.state == "above_horizon":
+                    _LOGGER.debug("Night check: sun is above the horizon")
+                    return False
+                rising = dt_util.parse_datetime(str(sun.attributes.get("next_rising")))
+                setting = dt_util.parse_datetime(
+                    str(sun.attributes.get("next_setting"))
+                )
+                if rising is not None and setting is not None:
+                    night = rising < setting
+                    _LOGGER.debug(
+                        "Night check: sun state %s, next rising %s, next setting %s "
+                        "-> %s",
+                        sun.state,
+                        rising,
+                        setting,
+                        night,
+                    )
+                    return night
+            elif not self._sun_missing_logged:
+                self._sun_missing_logged = True
+                _LOGGER.warning(
+                    "sun.sun entity not found; falling back to the fixed night "
+                    "window %s-%s",
+                    self.settings.night_start.strftime("%H:%M"),
+                    self.settings.night_end.strftime("%H:%M"),
+                )
+        return is_night(now, self.settings.night_start, self.settings.night_end)
 
     async def _async_boost(self) -> None:
         """Switch every configured camera channel to white light."""

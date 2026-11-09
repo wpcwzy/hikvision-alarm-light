@@ -36,6 +36,7 @@ class AutomationSwitch(AlarmLightEntity, SwitchEntity):
             "camera_channels": list(self.runtime.settings.camera_channels),
             "night_start": self.runtime.settings.night_start.strftime("%H:%M"),
             "night_end": self.runtime.settings.night_end.strftime("%H:%M"),
+            "follow_sun": self.runtime.settings.follow_sun,
             "hold_seconds": self.runtime.settings.hold_seconds,
             "max_boost_seconds": self.runtime.settings.max_boost_seconds,
             "brightness": self.runtime.settings.brightness,

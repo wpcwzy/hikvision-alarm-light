@@ -18,6 +18,7 @@ from custom_components.hikvision_alarm_light.const import (
     CONF_CAMERA_USE_SSL,
     CONF_CAMERA_USERNAME,
     CONF_CAMERA_VERIFY_SSL,
+    CONF_FOLLOW_SUN,
     CONF_HOLD_SECONDS,
     CONF_MAX_BOOST_SECONDS,
     CONF_NAME,
@@ -56,6 +57,7 @@ CAMERA_INPUT = {
     CONF_NAME: "后院入侵补光联动",
     CONF_NIGHT_START: "18:00",
     CONF_NIGHT_END: "06:00",
+    CONF_FOLLOW_SUN: True,
     CONF_HOLD_SECONDS: 300,
     CONF_MAX_BOOST_SECONDS: 900,
     CONF_BRIGHTNESS: 100,
@@ -67,6 +69,7 @@ OPTIONS_INPUT = {
     CONF_CAMERA_CHANNELS: "1, 2",
     CONF_NIGHT_START: "18:00",
     CONF_NIGHT_END: "06:00",
+    CONF_FOLLOW_SUN: True,
     CONF_HOLD_SECONDS: 300,
     CONF_MAX_BOOST_SECONDS: 900,
     CONF_BRIGHTNESS: 100,
@@ -201,6 +204,7 @@ async def test_options_flow_updates_channels_and_timers(
     assert entry.options[CONF_TRIGGER_CHANNELS] == [2, 6]
     assert entry.options[CONF_CAMERA_CHANNELS] == [1, 2]
     assert entry.options[CONF_NIGHT_START] == "18:00"
+    assert entry.options[CONF_FOLLOW_SUN] is True
     assert entry.options[CONF_HOLD_SECONDS] == 300
     assert entry.options[CONF_MAX_BOOST_SECONDS] == 900
     assert entry.options[CONF_BRIGHTNESS] == 100
