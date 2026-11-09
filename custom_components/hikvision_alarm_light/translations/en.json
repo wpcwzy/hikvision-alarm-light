@@ -16,7 +16,7 @@
       },
       "camera": {
         "title": "Connect to the light camera",
-        "description": "NVR {nvr_host}, alarm channels {trigger_channels}. Enter the PTZ/camera whose white light should be boosted, plus the night window and hold time.",
+        "description": "NVR {nvr_host}, alarm channels {trigger_channels}. Enter the PTZ/camera whose supplement light should be switched, its light channels (comma separated, for example 1, 2), the night window and hold time.",
         "data": {
           "camera_host": "Camera address",
           "camera_port": "Port",
@@ -24,13 +24,13 @@
           "camera_verify_ssl": "Verify TLS certificate",
           "camera_username": "Username",
           "camera_password": "Password",
-          "camera_channel": "Light channel",
           "name": "Name",
           "night_start": "Night start (HH:MM)",
           "night_end": "Night end (HH:MM)",
           "hold_seconds": "Keep light after alarm ends (s)",
           "max_boost_seconds": "Safety limit (s)",
-          "brightness": "Brightness (%)"
+          "brightness": "Brightness (%)",
+          "camera_channels": "Light channels (comma separated)"
         }
       }
     },
@@ -46,7 +46,8 @@
       "invalid_max_boost": "Safety limit must be between 60 and 3600 seconds.",
       "invalid_brightness": "Brightness must be between 1 and 100.",
       "already_configured": "This NVR channel -> camera link is already configured.",
-      "unknown": "Unexpected error; check the Home Assistant logs."
+      "unknown": "Unexpected error; check the Home Assistant logs.",
+      "invalid_camera_channels": "Light channels must be 1-64, for example 1, 2."
     },
     "abort": {
       "already_configured": "This NVR channel -> camera link is already configured."
@@ -56,7 +57,7 @@
     "step": {
       "init": {
         "title": "Alarm-light options",
-        "description": "NVR {nvr_host} channels {nvr_channels} -> camera {camera_host} channel {camera_channel}. After the light turns off the supplement light is switched to white light first and back to smart mode after the configured hold time.",
+        "description": "NVR {nvr_host} alarm channels {trigger_channels} -> camera {camera_host} light channels {camera_channels}. On alarm the supplement light switches to white light (always on, fixed brightness); after the alarm ends it switches back to smart mode after the hold time.",
         "data": {
           "name": "Name",
           "trigger_channels": "Alarm channels (comma separated)",
@@ -65,7 +66,7 @@
           "hold_seconds": "Keep light after alarm ends (s)",
           "max_boost_seconds": "Safety limit (s)",
           "brightness": "Brightness (%)",
-          "white_hold_seconds": "White-light hold before smart mode (s, default 30)"
+          "camera_channels": "Light channels (comma separated)"
         }
       }
     },
@@ -77,7 +78,7 @@
       "invalid_brightness": "Brightness must be between 1 and 100.",
       "invalid_values": "One or more values are invalid.",
       "unknown": "Unexpected error; check the Home Assistant logs.",
-      "invalid_white_hold": "The white-light hold must be between 0 and 600 seconds."
+      "invalid_camera_channels": "Light channels must be 1-64, for example 1, 2."
     },
     "abort": {
       "entry_not_found": "The config entry could not be found."

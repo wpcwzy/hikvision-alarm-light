@@ -68,7 +68,7 @@ class BoostBinarySensor(_BaseBinarySensor):
             if data.boost_ends_at
             else None,
             "camera_mode": data.camera_mode,
-            "light_control": data.light_control,
+            "camera_channels": list(self.runtime.settings.camera_channels),
             "brightness": self.runtime.settings.brightness,
             "hold_seconds": self.runtime.settings.hold_seconds,
         }

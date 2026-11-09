@@ -11,7 +11,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.hikvision_alarm_light.const import (
     CONF_BRIGHTNESS,
-    CONF_CAMERA_CHANNEL,
+    CONF_CAMERA_CHANNELS,
     CONF_CAMERA_HOST,
     CONF_CAMERA_PASSWORD,
     CONF_CAMERA_PORT,
@@ -29,8 +29,8 @@ from custom_components.hikvision_alarm_light.const import (
     CONF_NVR_USE_SSL,
     CONF_NVR_USERNAME,
     CONF_NVR_VERIFY_SSL,
+    CONF_TRIGGER_CHANNEL,
     CONF_TRIGGER_CHANNELS,
-    CONF_WHITE_HOLD_SECONDS,
     CONFIG_ENTRY_VERSION,
     DOMAIN,
 )
@@ -52,24 +52,24 @@ CAMERA_INPUT = {
     CONF_CAMERA_VERIFY_SSL: False,
     CONF_CAMERA_USERNAME: "admin",
     CONF_CAMERA_PASSWORD: "secret",
-    CONF_CAMERA_CHANNEL: 1,
+    CONF_CAMERA_CHANNELS: "1, 2",
     CONF_NAME: "后院入侵补光联动",
     CONF_NIGHT_START: "18:00",
     CONF_NIGHT_END: "06:00",
-    CONF_HOLD_SECONDS: 120,
-    CONF_MAX_BOOST_SECONDS: 300,
+    CONF_HOLD_SECONDS: 300,
+    CONF_MAX_BOOST_SECONDS: 900,
     CONF_BRIGHTNESS: 100,
 }
 
 OPTIONS_INPUT = {
     CONF_NAME: "后院入侵补光联动",
     CONF_TRIGGER_CHANNELS: "2,6",
+    CONF_CAMERA_CHANNELS: "1, 2",
     CONF_NIGHT_START: "18:00",
     CONF_NIGHT_END: "06:00",
     CONF_HOLD_SECONDS: 300,
     CONF_MAX_BOOST_SECONDS: 900,
     CONF_BRIGHTNESS: 100,
-    CONF_WHITE_HOLD_SECONDS: 30,
 }
 
 
@@ -82,10 +82,12 @@ def _patch_client():
 
 def make_existing_entry() -> MockConfigEntry:
     data = {
-        **{k: v for k, v in NVR_INPUT.items() if k != CONF_TRIGGER_CHANNELS},
+        **NVR_INPUT,
         **CAMERA_INPUT,
-        "trigger_channel": 2,
+        CONF_TRIGGER_CHANNELS: [2, 6],
+        CONF_CAMERA_CHANNELS: [1, 2],
     }
+    data.pop(CONF_TRIGGER_CHANNEL, None)
     return MockConfigEntry(
         domain=DOMAIN,
         title="后院入侵补光联动",
@@ -119,10 +121,9 @@ async def test_config_flow_creates_entry(hass: HomeAssistant) -> None:
     assert result["data"][CONF_NVR_HOST] == "192.0.2.2"
     assert result["data"][CONF_TRIGGER_CHANNELS] == [2, 6]
     assert result["data"][CONF_CAMERA_HOST] == "192.0.2.10"
-    assert result["data"][CONF_CAMERA_CHANNEL] == 1
-    assert result["data"][CONF_HOLD_SECONDS] == 120
-    assert result["data"][CONF_WHITE_HOLD_SECONDS] == 30
-    assert result["result"].unique_id == "SERIAL-192.0.2.2:2+6->SERIAL-192.0.2.10:1"
+    assert result["data"][CONF_CAMERA_CHANNELS] == [1, 2]
+    assert result["data"][CONF_HOLD_SECONDS] == 300
+    assert result["result"].unique_id == "SERIAL-192.0.2.2:2+6->SERIAL-192.0.2.10:1+2"
 
 
 async def test_config_flow_rejects_invalid_times(hass: HomeAssistant) -> None:
@@ -145,7 +146,7 @@ async def test_config_flow_rejects_invalid_times(hass: HomeAssistant) -> None:
 
 
 async def test_config_flow_rejects_invalid_channels(hass: HomeAssistant) -> None:
-    """Non-numeric or out-of-range channels are rejected."""
+    """Non-numeric alarm channels are rejected."""
     with _patch_client():
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -159,7 +160,30 @@ async def test_config_flow_rejects_invalid_channels(hass: HomeAssistant) -> None
     assert result["errors"] == {"base": "invalid_trigger_channels"}
 
 
-async def test_options_flow_updates_channels_and_presets(hass: HomeAssistant) -> None:
+async def test_config_flow_rejects_invalid_camera_channels(
+    hass: HomeAssistant,
+) -> None:
+    """Non-numeric camera light channels are rejected."""
+    with _patch_client():
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], NVR_INPUT
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {**CAMERA_INPUT, CONF_CAMERA_CHANNELS: "1, 99"},
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "camera"
+    assert result["errors"] == {"base": "invalid_camera_channels"}
+
+
+async def test_options_flow_updates_channels_and_timers(
+    hass: HomeAssistant,
+) -> None:
     entry = make_existing_entry()
     entry.add_to_hass(hass)
 
@@ -169,17 +193,22 @@ async def test_options_flow_updates_channels_and_presets(hass: HomeAssistant) ->
         assert result["step_id"] == "init"
 
         result = await hass.config_entries.options.async_configure(
-            result["flow_id"], OPTIONS_INPUT
+            result["flow_id"],
+            {**OPTIONS_INPUT, CONF_TRIGGER_CHANNELS: "2, 6"},
         )
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_TRIGGER_CHANNELS] == [2, 6]
+    assert entry.options[CONF_CAMERA_CHANNELS] == [1, 2]
     assert entry.options[CONF_NIGHT_START] == "18:00"
     assert entry.options[CONF_HOLD_SECONDS] == 300
-    assert entry.options[CONF_WHITE_HOLD_SECONDS] == 30
+    assert entry.options[CONF_MAX_BOOST_SECONDS] == 900
+    assert entry.options[CONF_BRIGHTNESS] == 100
 
 
-async def test_options_flow_rejects_invalid_channels(hass: HomeAssistant) -> None:
+async def test_options_flow_rejects_invalid_trigger_channels(
+    hass: HomeAssistant,
+) -> None:
     entry = make_existing_entry()
     entry.add_to_hass(hass)
 

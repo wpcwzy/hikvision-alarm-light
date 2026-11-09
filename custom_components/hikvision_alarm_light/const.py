@@ -23,7 +23,9 @@ CONF_CAMERA_USE_SSL: Final = "camera_use_ssl"
 CONF_CAMERA_VERIFY_SSL: Final = "camera_verify_ssl"
 CONF_CAMERA_USERNAME: Final = "camera_username"
 CONF_CAMERA_PASSWORD: Final = "camera_password"
+# Legacy single-channel key, only kept so older entries can be migrated.
 CONF_CAMERA_CHANNEL: Final = "camera_channel"
+CONF_CAMERA_CHANNELS: Final = "camera_channels"
 
 CONF_NAME: Final = "name"
 CONF_NIGHT_START: Final = "night_start"
@@ -32,13 +34,12 @@ CONF_HOLD_SECONDS: Final = "hold_seconds"
 CONF_MAX_BOOST_SECONDS: Final = "max_boost_seconds"
 CONF_BRIGHTNESS: Final = "brightness"
 
-CONF_WHITE_HOLD_SECONDS: Final = "white_hold_seconds"
-
 DEFAULT_NVR_PORT: Final = 80
 DEFAULT_CAMERA_PORT: Final = 80
 DEFAULT_TRIGGER_CHANNEL: Final = 2
 DEFAULT_TRIGGER_CHANNELS: Final = (2,)
 DEFAULT_CAMERA_CHANNEL: Final = 1
+DEFAULT_CAMERA_CHANNELS: Final = (1,)
 DEFAULT_NAME: Final = "后院入侵补光联动"
 DEFAULT_NIGHT_START: Final = time(18, 0)
 DEFAULT_NIGHT_END: Final = time(6, 0)
@@ -55,17 +56,17 @@ MAX_BOOST_SECONDS: Final = 3600
 MIN_BRIGHTNESS: Final = 1
 MAX_BRIGHTNESS: Final = 100
 
-# While the white light is on the picture is kept in B/W (IR).  After the light
-# is switched off the supplement light is first forced to white light
-# (colorVuWhiteLight) and, after this hold time, handed back to the smart
-# (automatic) mode.  0 skips the wait and switches to smart mode immediately.
-DEFAULT_WHITE_HOLD_SECONDS: Final = 30
-MIN_WHITE_HOLD_SECONDS: Final = 0
-MAX_WHITE_HOLD_SECONDS: Final = 600
+# Boom: while an alarm is active the camera supplement light is switched to
+# white light (colorVuWhiteLight) with the brightness regulation mode "on"
+# (always on) and the configured brightness.  When the alarm ends (or the
+# safety limit is hit) it is switched back to the smart (automatic) mode.
+BOOST_LIGHT_MODE: Final = "colorVuWhiteLight"
+BOOST_BRIGHTNESS_REGULATION_MODE: Final = "on"
+RESTORE_LIGHT_MODE: Final = "eventIntelligence"
 
-CONFIG_ENTRY_VERSION: Final = 2
+CONFIG_ENTRY_VERSION: Final = 3
 CONFIG_ENTRY_MINOR_VERSION: Final = 1
 
 EVENT_TYPE_FIELDDETECTION: Final = "fielddetection"
 
-STORE_VERSION: Final = 1
+STORE_VERSION: Final = 2

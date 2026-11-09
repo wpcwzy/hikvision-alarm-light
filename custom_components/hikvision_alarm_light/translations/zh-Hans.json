@@ -16,7 +16,7 @@
       },
       "camera": {
         "title": "连接补光摄像机",
-        "description": "NVR {nvr_host}，报警通道 {trigger_channels}。请输入需要增强照明的球机/摄像机信息，以及夜间时段和保持时间。",
+        "description": "NVR {nvr_host}，报警通道 {trigger_channels}。请输入需要切换补光的球机信息、补光通道（多个用逗号分隔，例如 1, 2）、夜间时段和保持时间。",
         "data": {
           "camera_host": "摄像机地址",
           "camera_port": "端口",
@@ -24,13 +24,13 @@
           "camera_verify_ssl": "校验 TLS 证书",
           "camera_username": "用户名",
           "camera_password": "密码",
-          "camera_channel": "补光通道",
           "name": "名称",
           "night_start": "夜间开始（HH:MM）",
           "night_end": "夜间结束（HH:MM）",
           "hold_seconds": "报警结束后保持（秒）",
           "max_boost_seconds": "安全上限（秒）",
-          "brightness": "亮度（%）"
+          "brightness": "亮度（%）",
+          "camera_channels": "补光通道（逗号分隔）"
         }
       }
     },
@@ -46,7 +46,8 @@
       "invalid_max_boost": "安全上限必须在 60 到 3600 秒之间。",
       "invalid_brightness": "亮度必须在 1 到 100 之间。",
       "already_configured": "该 NVR 通道 → 摄像机补光联动已经配置过了。",
-      "unknown": "发生未知错误，请查看 Home Assistant 日志。"
+      "unknown": "发生未知错误，请查看 Home Assistant 日志。",
+      "invalid_camera_channels": "补光通道必须是 1-64 的数字，例如 1, 2。"
     },
     "abort": {
       "already_configured": "该 NVR 通道 → 摄像机补光联动已经配置过了。"
@@ -56,7 +57,7 @@
     "step": {
       "init": {
         "title": "报警补光选项",
-        "description": "NVR {nvr_host} 通道 {nvr_channels} → 摄像机 {camera_host} 通道 {camera_channel}。关灯后先切换到白光补光，保持下方设置的时长，再切回智能补光。",
+        "description": "NVR {nvr_host} 报警通道 {trigger_channels} → 摄像机 {camera_host} 补光通道 {camera_channels}。报警时补光切为白光（常开、亮度固定），报警结束后按保持时间切回智能补光。",
         "data": {
           "name": "名称",
           "trigger_channels": "报警通道（逗号分隔）",
@@ -65,7 +66,7 @@
           "hold_seconds": "报警结束后保持（秒）",
           "max_boost_seconds": "安全上限（秒）",
           "brightness": "亮度（%）",
-          "white_hold_seconds": "白光补光保持时间（秒，默认 30）"
+          "camera_channels": "补光通道（逗号分隔）"
         }
       }
     },
@@ -77,7 +78,7 @@
       "invalid_brightness": "亮度必须在 1 到 100 之间。",
       "invalid_values": "有一个或多个数值无效。",
       "unknown": "发生未知错误，请查看 Home Assistant 日志。",
-      "invalid_white_hold": "白光补光保持时间必须在 0 到 600 秒之间。"
+      "invalid_camera_channels": "补光通道必须是 1-64 的数字，例如 1, 2。"
     },
     "abort": {
       "entry_not_found": "找不到对应的配置条目。"

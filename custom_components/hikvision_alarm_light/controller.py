@@ -1,4 +1,15 @@
-"""Event-driven controller for the Hikvision alarm-light link."""
+"""Event-driven controller for the Hikvision alarm-light link.
+
+The integration only uses the camera's ``supplementLight`` ISAPI interface: an
+intrusion alarm switches every configured camera channel to white light
+(``colorVuWhiteLight``) with the brightness regulation mode ``on`` (always on)
+and the configured brightness.  When the alarm has been inactive for the
+configured hold time (or the safety limit is reached) all channels are switched
+back to smart supplement light (``eventIntelligence``).
+
+The PTZ auxiliary ``LIGHT`` output is intentionally not used: on affected
+firmware it also switches off the IR illuminator after the light is turned off.
+"""
 
 from __future__ import annotations
 
@@ -22,8 +33,10 @@ from .api import (
     build_smart_xml,
 )
 from .const import (
+    BOOST_LIGHT_MODE,
     CONF_BRIGHTNESS,
     CONF_CAMERA_CHANNEL,
+    CONF_CAMERA_CHANNELS,
     CONF_CAMERA_HOST,
     CONF_CAMERA_PASSWORD,
     CONF_CAMERA_PORT,
@@ -43,13 +56,12 @@ from .const import (
     CONF_NVR_VERIFY_SSL,
     CONF_TRIGGER_CHANNEL,
     CONF_TRIGGER_CHANNELS,
-    CONF_WHITE_HOLD_SECONDS,
+    DEFAULT_CAMERA_CHANNEL,
+    DEFAULT_NAME,
     DEFAULT_TRIGGER_CHANNEL,
-    DEFAULT_WHITE_HOLD_SECONDS,
     DOMAIN,
     EVENT_TYPE_FIELDDETECTION,
-    MAX_WHITE_HOLD_SECONDS,
-    MIN_WHITE_HOLD_SECONDS,
+    RESTORE_LIGHT_MODE,
     STORE_VERSION,
 )
 
@@ -74,26 +86,26 @@ class LinkSettings:
     camera_verify_ssl: bool
     camera_username: str
     camera_password: str
-    camera_channel: int
+    camera_channels: tuple[int, ...]
     night_start: time
     night_end: time
     hold_seconds: int
     max_boost_seconds: int
     brightness: int
-    white_hold_seconds: int
 
     @classmethod
     def from_entry(cls, data: dict) -> LinkSettings:
         return cls(
-            name=str(data.get(CONF_NAME) or "后院入侵补光联动"),
+            name=str(data.get(CONF_NAME) or DEFAULT_NAME),
             nvr_host=str(data[CONF_NVR_HOST]),
             nvr_port=int(data[CONF_NVR_PORT]),
             nvr_use_ssl=bool(data[CONF_NVR_USE_SSL]),
             nvr_verify_ssl=bool(data[CONF_NVR_VERIFY_SSL]),
             nvr_username=str(data[CONF_NVR_USERNAME]),
             nvr_password=str(data[CONF_NVR_PASSWORD]),
-            trigger_channels=normalise_trigger_channels(
-                data.get(CONF_TRIGGER_CHANNELS, data.get(CONF_TRIGGER_CHANNEL))
+            trigger_channels=_normalise_channels(
+                data.get(CONF_TRIGGER_CHANNELS, data.get(CONF_TRIGGER_CHANNEL)),
+                DEFAULT_TRIGGER_CHANNEL,
             ),
             camera_host=str(data[CONF_CAMERA_HOST]),
             camera_port=int(data[CONF_CAMERA_PORT]),
@@ -101,27 +113,27 @@ class LinkSettings:
             camera_verify_ssl=bool(data[CONF_CAMERA_VERIFY_SSL]),
             camera_username=str(data[CONF_CAMERA_USERNAME]),
             camera_password=str(data[CONF_CAMERA_PASSWORD]),
-            camera_channel=int(data[CONF_CAMERA_CHANNEL]),
+            camera_channels=_normalise_channels(
+                data.get(CONF_CAMERA_CHANNELS, data.get(CONF_CAMERA_CHANNEL)),
+                DEFAULT_CAMERA_CHANNEL,
+            ),
             night_start=_parse_time(data[CONF_NIGHT_START]),
             night_end=_parse_time(data[CONF_NIGHT_END]),
             hold_seconds=int(data[CONF_HOLD_SECONDS]),
             max_boost_seconds=int(data[CONF_MAX_BOOST_SECONDS]),
             brightness=int(data[CONF_BRIGHTNESS]),
-            white_hold_seconds=_parse_white_hold_seconds(
-                data.get(CONF_WHITE_HOLD_SECONDS)
-            ),
         )
 
 
-def normalise_trigger_channels(value: object) -> tuple[int, ...]:
-    """Return a stable, de-duplicated tuple of trigger channel numbers.
+def _normalise_channels(value: object, default: int) -> tuple[int, ...]:
+    """Return a stable, de-duplicated tuple of channel numbers.
 
-    Version 1 entries stored a single ``trigger_channel`` integer, while
-    current entries store a list in ``trigger_channels``.  Both (and a
-    comma-separated string from manual configuration) are accepted here.
+    Entries written by older versions stored a single channel as an integer;
+    newer entries store a list.  Both (and a comma-separated string from manual
+    configuration) are accepted here.
     """
     if value is None:
-        value = DEFAULT_TRIGGER_CHANNEL
+        value = default
     elif isinstance(value, (int, str)):
         value = (value,)
     channels: list[int] = []
@@ -134,21 +146,18 @@ def normalise_trigger_channels(value: object) -> tuple[int, ...]:
             if channel not in channels:
                 channels.append(channel)
     if not channels:
-        raise ValueError("At least one trigger channel is required")
+        raise ValueError("At least one channel is required")
     return tuple(sorted(channels))
 
 
-def _parse_white_hold_seconds(value: object) -> int:
-    """Return how long white-light supplement light is kept after switch-off."""
-    if value is None or value == "":
-        return DEFAULT_WHITE_HOLD_SECONDS
-    try:
-        hold = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return DEFAULT_WHITE_HOLD_SECONDS
-    if not MIN_WHITE_HOLD_SECONDS <= hold <= MAX_WHITE_HOLD_SECONDS:
-        return DEFAULT_WHITE_HOLD_SECONDS
-    return hold
+def normalise_trigger_channels(value: object) -> tuple[int, ...]:
+    """Normalise the NVR alarm channel selection."""
+    return _normalise_channels(value, DEFAULT_TRIGGER_CHANNEL)
+
+
+def normalise_camera_channels(value: object) -> tuple[int, ...]:
+    """Normalise the camera supplement-light channel selection."""
+    return _normalise_channels(value, DEFAULT_CAMERA_CHANNEL)
 
 
 def _parse_time(value: str | time) -> time:
@@ -170,6 +179,13 @@ def is_night(now: datetime, start: time, end: time) -> bool:
     return current >= start or current < end
 
 
+def _format_modes(modes: list[str]) -> str | None:
+    unique = sorted({mode for mode in modes if mode})
+    if not unique:
+        return None
+    return ",".join(unique)
+
+
 @dataclass(frozen=True, slots=True)
 class LinkSnapshot:
     """Current state exposed to the entities."""
@@ -186,11 +202,10 @@ class LinkSnapshot:
     camera_mode: str | None
     boost_ends_at: datetime | None
     last_error: str | None
-    light_control: str | None
 
 
 class AlarmLightController:
-    """Subscribe to NVR alerts and control the camera's white light."""
+    """Subscribe to NVR alerts and control the cameras' supplement light."""
 
     def __init__(
         self,
@@ -222,13 +237,8 @@ class AlarmLightController:
         self._camera_mode: str | None = None
         self._boost_ends_at: datetime | None = None
         self._last_error: str | None = None
-        self._restore_xml: str | None = None
-        self._light_control: str | None = None
-        self._aux_supported = False
         self._restore_unsub: CALLBACK_TYPE | None = None
         self._guard_unsub: CALLBACK_TYPE | None = None
-        self._smart_unsub: CALLBACK_TYPE | None = None
-        self._smart_pending = False
         self._running = False
 
         factory = reader_factory or AlertStreamReader
@@ -262,71 +272,36 @@ class AlarmLightController:
             camera_mode=self._camera_mode,
             boost_ends_at=self._boost_ends_at,
             last_error=self._last_error,
-            light_control=self._light_control,
         )
 
     async def async_start(self) -> None:
-        """Load persisted state, recover an interrupted boost, start the stream."""
-        await self._async_detect_light_control()
+        """Load persisted state and start the alert stream."""
         stored = await self._store.async_load() or {}
         self._enabled = bool(stored.get("enabled", True))
 
         if stored.get("boost_active"):
+            _LOGGER.info(
+                "Recovering interrupted white-light boost; restoring smart mode"
+            )
             self._boost_active = True
-            if self._light_control == "mode":
-                self._restore_xml = stored.get("restore_xml") or build_smart_xml()
             try:
                 await self._async_restore_light()
             except HikvisionError as err:
                 _LOGGER.warning("Could not recover interrupted light boost: %s", err)
                 self._last_error = str(err)
                 self._schedule_restore(30)
-        elif stored.get("smart_pending"):
-            _LOGGER.info(
-                "Recovering interrupted white-light hold; restoring smart light"
-            )
-            self._smart_pending = True
-            try:
-                await self._async_finish_smart_restore()
-            except HikvisionError as err:
-                _LOGGER.warning("Could not restore smart supplement light: %s", err)
-                self._last_error = str(err)
         else:
             await self._async_read_camera_mode()
 
         self._reader.start()
         self._notify()
 
-    async def _async_detect_light_control(self) -> None:
-        """Prefer the camera's direct aux LIGHT switch; fall back to mode."""
-        try:
-            self._aux_supported = await self.hass.async_add_executor_job(
-                self.camera_client.get_aux_light_support,
-                self.settings.camera_channel,
-            )
-        except HikvisionError as err:
-            _LOGGER.warning(
-                "Could not query PTZ aux-light capability; falling back to mode: %s",
-                err,
-            )
-            self._aux_supported = False
-        self._light_control = "aux" if self._aux_supported else "mode"
-        _LOGGER.debug("Camera light control method: %s", self._light_control)
-
     async def async_stop(self) -> None:
-        """Stop the stream and restore the light if it is currently boosted."""
+        """Stop the stream and restore the smart supplement-light mode."""
         self._running = False
         self._cancel_restore()
         self._cancel_guard()
-        self._cancel_smart_restore()
         self._reader.stop()
-        if self._smart_pending:
-            try:
-                await self._async_finish_smart_restore()
-            except HikvisionError as err:
-                _LOGGER.warning(
-                    "Could not restore smart supplement light while stopping: %s", err
-                )
         if self._boost_active:
             try:
                 await self._async_restore_light()
@@ -341,7 +316,7 @@ class AlarmLightController:
         self._notify()
 
     async def async_test_boost(self) -> None:
-        """Manually boost the light for the configured hold time."""
+        """Manually switch the white light on for the configured hold time."""
         await self._async_boost()
         self._schedule_guard()
         self._schedule_restore(self.settings.hold_seconds)
@@ -351,12 +326,11 @@ class AlarmLightController:
         """Manually restore the smart supplement-light mode."""
         self._cancel_restore()
         self._cancel_guard()
-        self._cancel_smart_restore()
         await self._async_restore_light()
         self._notify()
 
     async def async_turn_light_on(self) -> None:
-        """Switch the alarm light on and keep it on until switched off.
+        """Switch the white light on and keep it on until switched off.
 
         The safety guard still switches the light off after the configured
         ``max_boost_seconds`` so a forgotten switch cannot leave it on forever.
@@ -370,7 +344,7 @@ class AlarmLightController:
         _LOGGER.info("Alarm light switched on manually")
 
     async def async_turn_light_off(self) -> None:
-        """Switch the alarm light off and restore the supplement-light modes."""
+        """Switch the white light off and restore the smart supplement mode."""
         self._cancel_restore()
         self._cancel_guard()
         if not self._boost_active:
@@ -439,60 +413,36 @@ class AlarmLightController:
             self._notify()
 
     async def _async_boost(self) -> None:
+        """Switch every configured camera channel to white light."""
         if self._boost_active:
             return
 
-        if self._light_control == "aux":
-            await self._async_boost_aux()
-            return
-
-        state = await self.hass.async_add_executor_job(
-            self.camera_client.get_supplement_light, self.settings.camera_channel
-        )
-        self._camera_mode = state.mode
-        restore_xml = (
-            state.raw_xml if state.mode == "eventIntelligence" else build_smart_xml()
-        )
-        boost_xml = build_boost_xml(self.settings.brightness)
-
+        white_xml = build_boost_xml(self.settings.brightness)
+        changed: list[int] = []
         try:
-            await self.hass.async_add_executor_job(
-                self.camera_client.put_supplement_light,
-                self.settings.camera_channel,
-                boost_xml,
-            )
-            new_state = await self.hass.async_add_executor_job(
-                self.camera_client.get_supplement_light,
-                self.settings.camera_channel,
-            )
-            if new_state.mode != "colorVuWhiteLight":
-                raise HikvisionError(
-                    f"Camera stayed in {new_state.mode} mode instead of white light."
+            for channel in self.settings.camera_channels:
+                await self._async_put_supplement_light(channel, white_xml)
+                changed.append(channel)
+            for channel in self.settings.camera_channels:
+                state = await self.hass.async_add_executor_job(
+                    self.camera_client.get_supplement_light, channel
                 )
-            if (
-                new_state.white_light_brightness is not None
-                and new_state.white_light_brightness != self.settings.brightness
-            ):
-                _LOGGER.warning(
-                    "Camera reports white-light brightness %s instead of %s",
-                    new_state.white_light_brightness,
-                    self.settings.brightness,
-                )
+                if state.mode != BOOST_LIGHT_MODE:
+                    raise HikvisionError(
+                        f"Camera channel {channel} is in {state.mode} mode "
+                        "instead of white light."
+                    )
         except HikvisionError:
             # Try not to leave the camera in an unknown boosted state.
-            try:
-                await self.hass.async_add_executor_job(
-                    self.camera_client.put_supplement_light,
-                    self.settings.camera_channel,
-                    restore_xml,
-                )
-            except HikvisionError:
-                _LOGGER.exception("Could not roll back failed light boost")
+            for channel in changed:
+                try:
+                    await self._async_put_supplement_light(channel, build_smart_xml())
+                except HikvisionError:
+                    _LOGGER.exception("Could not roll back failed light boost")
             raise
 
         self._boost_active = True
-        self._restore_xml = restore_xml
-        self._camera_mode = new_state.mode
+        self._camera_mode = BOOST_LIGHT_MODE
         self._boost_ends_at = dt_util.now() + timedelta(
             seconds=self.settings.max_boost_seconds
         )
@@ -500,182 +450,88 @@ class AlarmLightController:
         await self._save_state()
         self._notify()
         _LOGGER.info(
-            "Boosted camera %s channel %s to white light at %s%%",
+            "Boosted camera %s channels %s to white light at %s%% (always on)",
             self.settings.camera_host,
-            self.settings.camera_channel,
+            ", ".join(str(channel) for channel in self.settings.camera_channels),
             self.settings.brightness,
         )
 
-    async def _async_boost_aux(self) -> None:
-        """Use the same direct PTZ aux LIGHT command as the camera web UI."""
-        state = await self.hass.async_add_executor_job(
-            self.camera_client.get_supplement_light, self.settings.camera_channel
+    async def _async_put_supplement_light(self, channel: int, xml_text: str) -> None:
+        """Send one supplement-light document to a camera channel."""
+        await self.hass.async_add_executor_job(
+            self.camera_client.put_supplement_light,
+            channel,
+            xml_text,
         )
+
+    async def _async_restore_channel(self, channel: int) -> bool:
+        """Switch one camera channel back to smart supplement light."""
         try:
-            await self.hass.async_add_executor_job(
-                self.camera_client.set_aux_light,
-                self.settings.camera_channel,
-                True,
-            )
-            new_state = await self.hass.async_add_executor_job(
-                self.camera_client.get_supplement_light,
-                self.settings.camera_channel,
-            )
-            if new_state.mode != state.mode:
-                _LOGGER.warning(
-                    "Aux LIGHT command unexpectedly changed supplement mode "
-                    "from %s to %s",
-                    state.mode,
-                    new_state.mode,
-                )
-        except HikvisionError:
-            try:
-                await self.hass.async_add_executor_job(
-                    self.camera_client.set_aux_light,
-                    self.settings.camera_channel,
-                    False,
-                )
-            except HikvisionError:
-                _LOGGER.exception("Could not roll back failed aux-light boost")
-            raise
-
-        self._boost_active = True
-        self._restore_xml = None
-        self._camera_mode = new_state.mode
-        self._boost_ends_at = dt_util.now() + timedelta(
-            seconds=self.settings.max_boost_seconds
-        )
-        self._last_error = None
-        await self._save_state()
-        self._notify()
-        _LOGGER.info(
-            "Boosted camera %s channel %s via PTZ aux LIGHT",
-            self.settings.camera_host,
-            self.settings.camera_channel,
-        )
-
-    def _schedule_smart_restore(self, hold_seconds: int) -> None:
-        """Switch back to smart supplement light after *hold_seconds*."""
-        self._cancel_smart_restore()
-        self._smart_pending = True
-        self._smart_unsub = async_call_later(
-            self.hass, max(0, hold_seconds), self._async_smart_restore_timer
-        )
-
-    def _cancel_smart_restore(self) -> None:
-        if self._smart_unsub is not None:
-            self._smart_unsub()
-            self._smart_unsub = None
-
-    async def _async_smart_restore_timer(self, _now: datetime) -> None:
-        self._smart_unsub = None
-        try:
-            await self._async_finish_smart_restore()
+            await self._async_put_supplement_light(channel, build_smart_xml())
         except HikvisionError as err:
-            self._last_error = str(err)
-            _LOGGER.error("Could not restore smart supplement light: %s", err)
-            self._notify()
-
-    async def _async_finish_smart_restore(self) -> None:
-        """Switch the supplement light back to the smart/automatic mode."""
-        smart_ok = await self._async_set_supplement_mode(
-            build_smart_xml(), "smart/automatic"
-        )
-        state = await self.hass.async_add_executor_job(
-            self.camera_client.get_supplement_light,
-            self.settings.camera_channel,
-        )
-        self._camera_mode = state.mode
-        self._smart_pending = False
-        if smart_ok:
-            self._last_error = None
-        await self._save_state()
-        self._notify()
-        _LOGGER.info(
-            "Restored smart supplement light; camera mode is now %s", state.mode
-        )
-
-    async def _async_set_supplement_mode(self, xml_text: str, label: str) -> bool:
-        """Switch the camera supplement light to a mode; failures are logged."""
-        try:
-            await self.hass.async_add_executor_job(
-                self.camera_client.put_supplement_light,
-                self.settings.camera_channel,
-                xml_text,
+            _LOGGER.warning(
+                "Could not restore smart supplement light on camera channel %s: %s",
+                channel,
+                err,
             )
-        except HikvisionError as err:
-            _LOGGER.warning("Could not switch supplement light to %s: %s", label, err)
             self._last_error = str(err)
             return False
-        _LOGGER.debug("Supplement light switched to %s", label)
+        _LOGGER.debug(
+            "Supplement light on camera channel %s switched back to smart mode",
+            channel,
+        )
         return True
 
     async def _async_restore_light(self) -> None:
-        if self._light_control == "aux":
-            await self.hass.async_add_executor_job(
-                self.camera_client.set_aux_light,
-                self.settings.camera_channel,
-                False,
-            )
-            # The PTZ presets used previously for day/night switching also moved
-            # the camera and could be dropped by the device.  Use the supplement
-            # light API instead: switch to white-light supplement first, keep it
-            # on for the configured hold time, then hand the light back to the
-            # smart/automatic mode.  The delayed smart switch runs as an HA timer
-            # so the button/service call does not block for the whole hold time.
-            white_ok = await self._async_set_supplement_mode(
-                build_boost_xml(self.settings.brightness), "white light"
-            )
-            self._boost_active = False
-            self._restore_xml = None
-            if white_ok:
-                self._camera_mode = "colorVuWhiteLight"
-            self._boost_ends_at = None
-            self._cancel_restore()
-            self._cancel_guard()
-            hold_seconds = self.settings.white_hold_seconds if white_ok else 0
-            self._schedule_smart_restore(hold_seconds)
-            await self._save_state()
-            self._notify()
-            _LOGGER.info(
-                "Switched off PTZ aux LIGHT; white supplement light will be held "
-                "for %ss before restoring smart mode",
-                hold_seconds,
-            )
-            return
+        """Switch every camera channel back to smart supplement light."""
+        restored = [
+            await self._async_restore_channel(channel)
+            for channel in self.settings.camera_channels
+        ]
 
-        restore_xml = self._restore_xml or build_smart_xml()
-        await self.hass.async_add_executor_job(
-            self.camera_client.put_supplement_light,
-            self.settings.camera_channel,
-            restore_xml,
-        )
-        state = await self.hass.async_add_executor_job(
-            self.camera_client.get_supplement_light,
-            self.settings.camera_channel,
-        )
-        if state.mode == "colorVuWhiteLight":
-            raise HikvisionError("Camera still reports white-light mode after restore.")
+        states = []
+        for channel in self.settings.camera_channels:
+            try:
+                states.append(
+                    await self.hass.async_add_executor_job(
+                        self.camera_client.get_supplement_light, channel
+                    )
+                )
+            except HikvisionError as err:
+                _LOGGER.warning(
+                    "Could not read supplement light state of camera channel %s: %s",
+                    channel,
+                    err,
+                )
+                states.append(None)
+
+        modes = [state.mode for state in states if state is not None]
+        camera_mode = _format_modes(modes)
+        if camera_mode is not None:
+            self._camera_mode = camera_mode
+        if (
+            all(restored)
+            and modes
+            and all(mode == RESTORE_LIGHT_MODE for mode in modes)
+        ):
+            self._last_error = None
         self._boost_active = False
-        self._restore_xml = None
-        self._camera_mode = state.mode
         self._boost_ends_at = None
-        self._last_error = None
         self._cancel_restore()
         self._cancel_guard()
         await self._save_state()
+        self._notify()
         _LOGGER.info(
-            "Restored camera %s channel %s to %s mode",
+            "Switched camera %s channels %s back to smart supplement light",
             self.settings.camera_host,
-            self.settings.camera_channel,
-            state.mode,
+            ", ".join(str(channel) for channel in self.settings.camera_channels),
         )
 
     async def _async_read_camera_mode(self) -> None:
         try:
             state = await self.hass.async_add_executor_job(
                 self.camera_client.get_supplement_light,
-                self.settings.camera_channel,
+                self.settings.camera_channels[0],
             )
         except HikvisionError as err:
             _LOGGER.warning("Could not read camera supplement light: %s", err)
@@ -747,8 +603,6 @@ class AlarmLightController:
             {
                 "enabled": self._enabled,
                 "boost_active": self._boost_active,
-                "restore_xml": self._restore_xml if self._boost_active else None,
-                "smart_pending": self._smart_pending,
             }
         )
 

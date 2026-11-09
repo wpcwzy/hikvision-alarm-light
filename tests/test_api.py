@@ -81,6 +81,10 @@ def test_build_boost_xml_clamps_brightness() -> None:
     xml = build_boost_xml(250)
     assert "<supplementLightMode>colorVuWhiteLight</supplementLightMode>" in xml
     assert "<whiteLightBrightness>100</whiteLightBrightness>" in xml
+    # The white light must stay at the configured brightness ("always on").
+    assert (
+        "<mixedLightBrightnessRegulatMode>on</mixedLightBrightnessRegulatMode>" in xml
+    )
     xml_low = build_boost_xml(-5)
     assert "<whiteLightBrightness>1</whiteLightBrightness>" in xml_low
 
@@ -118,17 +122,3 @@ def test_is_night() -> None:
     assert is_night(datetime(2026, 11, 7, 2, 0, tzinfo=UTC), start, end)
     assert not is_night(datetime(2026, 11, 7, 12, 0, tzinfo=UTC), start, end)
     assert is_night(datetime(2026, 11, 7, 12, 0, tzinfo=UTC), time(0, 0), time(23, 59))
-
-
-def test_build_aux_light_xml() -> None:
-    from custom_components.hikvision_alarm_light.api import build_aux_light_xml
-
-    on = build_aux_light_xml(True)
-    off = build_aux_light_xml(False)
-    assert "<PTZAux>" in on
-    assert "<id>1</id>" in on
-    assert "<type>LIGHT</type>" in on
-    assert "<status>on</status>" in on
-    assert "<status>off</status>" in off
-    # Hikvision rejects a namespace on this body.
-    assert "xmlns" not in on

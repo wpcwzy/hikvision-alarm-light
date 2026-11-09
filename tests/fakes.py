@@ -17,7 +17,6 @@ class FakeHikvisionClient:
     """Stateful replacement for HikvisionIsapiClient."""
 
     instances: ClassVar[list[FakeHikvisionClient]] = []
-    aux_supported: ClassVar[bool] = True
 
     def __init__(self, host: str, username: str, password: str, **kwargs: Any) -> None:
         self.host = host
@@ -26,11 +25,9 @@ class FakeHikvisionClient:
         self.port = int(kwargs.get("port", 80))
         self.base_url = f"http://{host}:{self.port}"
         self.closed = False
-        self.mode = "eventIntelligence"
-        self.brightness = 100
-        self.raw_xml = build_smart_xml()
-        self.aux_on = False
-        self.supplement_history: list[str] = []
+        self.modes: dict[int, str] = {}
+        self.raw_xmls: dict[int, str] = {}
+        self.put_calls: list[tuple[int, str]] = []
         FakeHikvisionClient.instances.append(self)
 
     @classmethod
@@ -53,30 +50,14 @@ class FakeHikvisionClient:
     def get_linkage_state(self, channel: int) -> str:
         return "<EventTrigger><id>fielddetection-2</id></EventTrigger>"
 
-    def get_aux_light_support(self, channel: int) -> bool:
-        return self.aux_supported
-
-    def set_aux_light(self, channel: int, on: bool, aux_id: int = 1) -> None:
-        self.aux_on = on
-
     def get_supplement_light(self, channel: int) -> SupplementLightState:
-        if self.mode == "colorVuWhiteLight":
-            self.raw_xml = (
-                "<SupplementLight><supplementLightMode>colorVuWhiteLight"
-                f"</supplementLightMode><whiteLightBrightness>{self.brightness}"
-                "</whiteLightBrightness></SupplementLight>"
-            )
-        else:
-            self.raw_xml = build_smart_xml()
-        return parse_supplement_light(self.raw_xml)
+        return parse_supplement_light(self.raw_xmls.get(channel) or build_smart_xml())
 
     def put_supplement_light(self, channel: int, xml_text: str) -> None:
         state = parse_supplement_light(xml_text)
-        self.mode = state.mode
-        self.supplement_history.append(state.mode)
-        if state.white_light_brightness is not None:
-            self.brightness = state.white_light_brightness
-        self.raw_xml = xml_text
+        self.modes[channel] = state.mode
+        self.raw_xmls[channel] = xml_text
+        self.put_calls.append((channel, state.mode))
 
     def close(self) -> None:
         self.closed = True

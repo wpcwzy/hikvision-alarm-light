@@ -35,6 +35,7 @@ from .api import (
 from .const import (
     CONF_BRIGHTNESS,
     CONF_CAMERA_CHANNEL,
+    CONF_CAMERA_CHANNELS,
     CONF_CAMERA_HOST,
     CONF_CAMERA_PASSWORD,
     CONF_CAMERA_PORT,
@@ -54,11 +55,11 @@ from .const import (
     CONF_NVR_VERIFY_SSL,
     CONF_TRIGGER_CHANNEL,
     CONF_TRIGGER_CHANNELS,
-    CONF_WHITE_HOLD_SECONDS,
     CONFIG_ENTRY_MINOR_VERSION,
     CONFIG_ENTRY_VERSION,
     DEFAULT_BRIGHTNESS,
     DEFAULT_CAMERA_CHANNEL,
+    DEFAULT_CAMERA_CHANNELS,
     DEFAULT_CAMERA_PORT,
     DEFAULT_HOLD_SECONDS,
     DEFAULT_MAX_BOOST_SECONDS,
@@ -67,21 +68,22 @@ from .const import (
     DEFAULT_NIGHT_START,
     DEFAULT_NVR_PORT,
     DEFAULT_TRIGGER_CHANNEL,
-    DEFAULT_WHITE_HOLD_SECONDS,
     DOMAIN,
     MAX_BOOST_SECONDS,
     MAX_BRIGHTNESS,
     MAX_CHANNEL,
     MAX_HOLD_SECONDS,
-    MAX_WHITE_HOLD_SECONDS,
     MIN_BOOST_SECONDS,
     MIN_BRIGHTNESS,
     MIN_CHANNEL,
     MIN_HOLD_SECONDS,
-    MIN_WHITE_HOLD_SECONDS,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _format_channels(channels: list[int] | tuple[int, ...]) -> str:
+    return ", ".join(str(channel) for channel in channels)
 
 
 NVR_CONNECT_SCHEMA = vol.Schema(
@@ -115,10 +117,9 @@ CAMERA_SCHEMA = vol.Schema(
             TextSelectorConfig(type=TextSelectorType.PASSWORD)
         ),
         vol.Required(
-            CONF_CAMERA_CHANNEL, default=DEFAULT_CAMERA_CHANNEL
-        ): NumberSelector(
-            NumberSelectorConfig(min=1, max=64, mode=NumberSelectorMode.BOX, step=1)
-        ),
+            CONF_CAMERA_CHANNELS,
+            default=", ".join(str(channel) for channel in DEFAULT_CAMERA_CHANNELS),
+        ): TextSelector(),
         vol.Required(CONF_NAME, default=DEFAULT_NAME): TextSelector(),
         vol.Required(
             CONF_NIGHT_START, default=DEFAULT_NIGHT_START.strftime("%H:%M")
@@ -206,7 +207,7 @@ def _parse_time(value: Any) -> time | None:
 
 
 def _parse_channels(value: Any) -> list[int] | None:
-    """Parse comma separated NVR channel numbers into a sorted list."""
+    """Parse comma separated channel numbers into a sorted list."""
     if value is None:
         return None
     items = value if isinstance(value, (list, tuple, set)) else [value]
@@ -229,30 +230,18 @@ def _parse_channels(value: Any) -> list[int] | None:
     return sorted(channels)
 
 
-def _parse_white_hold_seconds(value: Any) -> int | None:
-    """Parse how long the white supplement light is kept after switch-off."""
-    if value is None or str(value).strip() == "":
-        return DEFAULT_WHITE_HOLD_SECONDS
-    try:
-        hold = int(value)
-    except (TypeError, ValueError):
-        return None
-    if not MIN_WHITE_HOLD_SECONDS <= hold <= MAX_WHITE_HOLD_SECONDS:
-        return None
-    return hold
-
-
-def _format_channels(channels: list[int] | tuple[int, ...]) -> str:
-    return ", ".join(str(channel) for channel in channels)
-
-
-def _current_channels(data: dict) -> list[int]:
-    channels = data.get(CONF_TRIGGER_CHANNELS)
+def _current_channels(
+    data: dict,
+    key: str,
+    legacy_key: str,
+    default: int,
+) -> list[int]:
+    channels = data.get(key)
     if channels is None:
-        channels = [data.get(CONF_TRIGGER_CHANNEL, DEFAULT_TRIGGER_CHANNEL)]
+        channels = [data.get(legacy_key, default)]
     parsed = _parse_channels(channels)
     if parsed is None:
-        return [DEFAULT_TRIGGER_CHANNEL]
+        return [default]
     return parsed
 
 
@@ -334,7 +323,7 @@ class HikvisionAlarmLightConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_camera(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Ask for camera credentials and lighting behavior."""
+        """Ask for camera credentials, light channels and behavior."""
         if not self._nvr_data:
             return await self.async_step_user()
 
@@ -347,7 +336,7 @@ class HikvisionAlarmLightConfigFlow(ConfigFlow, domain=DOMAIN):
             )
             username = str(user_input[CONF_CAMERA_USERNAME]).strip()
             password = str(user_input[CONF_CAMERA_PASSWORD])
-            camera_channel = int(user_input[CONF_CAMERA_CHANNEL])
+            camera_channels = _parse_channels(user_input[CONF_CAMERA_CHANNELS])
             night_start = _parse_time(user_input[CONF_NIGHT_START])
             night_end = _parse_time(user_input[CONF_NIGHT_END])
             hold_seconds = int(user_input[CONF_HOLD_SECONDS])
@@ -359,6 +348,8 @@ class HikvisionAlarmLightConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_host"
             elif not username:
                 errors["base"] = "invalid_auth"
+            elif camera_channels is None:
+                errors["base"] = "invalid_camera_channels"
             elif night_start is None or night_end is None or night_start == night_end:
                 errors["base"] = "invalid_night_window"
             elif not MIN_HOLD_SECONDS <= hold_seconds <= MAX_HOLD_SECONDS:
@@ -380,9 +371,10 @@ class HikvisionAlarmLightConfigFlow(ConfigFlow, domain=DOMAIN):
                     device = await self.hass.async_add_executor_job(
                         client.get_device_info
                     )
-                    await self.hass.async_add_executor_job(
-                        client.get_supplement_light, camera_channel
-                    )
+                    for camera_channel in camera_channels:
+                        await self.hass.async_add_executor_job(
+                            client.get_supplement_light, camera_channel
+                        )
                 except HikvisionAuthError:
                     errors["base"] = "invalid_auth"
                 except HikvisionConnectionError:
@@ -395,9 +387,10 @@ class HikvisionAlarmLightConfigFlow(ConfigFlow, domain=DOMAIN):
                         str(channel)
                         for channel in self._nvr_data[CONF_TRIGGER_CHANNELS]
                     )
+                    camera_key = "+".join(str(channel) for channel in camera_channels)
                     unique_id = (
                         f"{self._nvr_serial}:{channels_key}->"
-                        f"{device.serial_number or host}:{camera_channel}"
+                        f"{device.serial_number or host}:{camera_key}"
                     )
                     await self.async_set_unique_id(unique_id)
                     self._abort_if_unique_id_configured()
@@ -411,14 +404,13 @@ class HikvisionAlarmLightConfigFlow(ConfigFlow, domain=DOMAIN):
                         ),
                         CONF_CAMERA_USERNAME: username,
                         CONF_CAMERA_PASSWORD: password,
-                        CONF_CAMERA_CHANNEL: camera_channel,
+                        CONF_CAMERA_CHANNELS: camera_channels,
                         CONF_NAME: name,
                         CONF_NIGHT_START: night_start.strftime("%H:%M"),
                         CONF_NIGHT_END: night_end.strftime("%H:%M"),
                         CONF_HOLD_SECONDS: hold_seconds,
                         CONF_MAX_BOOST_SECONDS: max_boost_seconds,
                         CONF_BRIGHTNESS: brightness,
-                        CONF_WHITE_HOLD_SECONDS: DEFAULT_WHITE_HOLD_SECONDS,
                     }
                     return self.async_create_entry(title=name, data=data)
                 finally:
@@ -443,7 +435,7 @@ class HikvisionAlarmLightConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class HikvisionAlarmLightOptionsFlow(OptionsFlow):
-    """Change channels, timing, brightness and the restore interval."""
+    """Change channels, timing and brightness."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -453,28 +445,32 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
             return self.async_abort(reason="entry_not_found")
 
         merged = {**dict(entry.data), **dict(entry.options)}
-        current_channels = _current_channels(merged)
+        current_trigger_channels = _current_channels(
+            merged,
+            CONF_TRIGGER_CHANNELS,
+            CONF_TRIGGER_CHANNEL,
+            DEFAULT_TRIGGER_CHANNEL,
+        )
+        current_camera_channels = _current_channels(
+            merged,
+            CONF_CAMERA_CHANNELS,
+            CONF_CAMERA_CHANNEL,
+            DEFAULT_CAMERA_CHANNEL,
+        )
         current_name = str(merged.get(CONF_NAME, DEFAULT_NAME))
         current_start = str(merged.get(CONF_NIGHT_START, "18:00"))
         current_end = str(merged.get(CONF_NIGHT_END, "06:00"))
         current_hold = int(merged.get(CONF_HOLD_SECONDS, DEFAULT_HOLD_SECONDS))
         current_max = int(merged.get(CONF_MAX_BOOST_SECONDS, DEFAULT_MAX_BOOST_SECONDS))
         current_brightness = int(merged.get(CONF_BRIGHTNESS, DEFAULT_BRIGHTNESS))
-        current_white_hold = _parse_white_hold_seconds(
-            merged.get(CONF_WHITE_HOLD_SECONDS)
-        )
-        if current_white_hold is None:
-            current_white_hold = DEFAULT_WHITE_HOLD_SECONDS
         errors: dict[str, str] = {}
 
         if user_input is not None:
             name = str(user_input.get(CONF_NAME, "")).strip() or DEFAULT_NAME
-            channels = _parse_channels(user_input.get(CONF_TRIGGER_CHANNELS))
+            trigger_channels = _parse_channels(user_input.get(CONF_TRIGGER_CHANNELS))
+            camera_channels = _parse_channels(user_input.get(CONF_CAMERA_CHANNELS))
             night_start = _parse_time(user_input.get(CONF_NIGHT_START))
             night_end = _parse_time(user_input.get(CONF_NIGHT_END))
-            white_hold = _parse_white_hold_seconds(
-                user_input.get(CONF_WHITE_HOLD_SECONDS)
-            )
             try:
                 hold_seconds = int(user_input[CONF_HOLD_SECONDS])
                 max_boost_seconds = int(user_input[CONF_MAX_BOOST_SECONDS])
@@ -482,10 +478,10 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
             except (KeyError, TypeError, ValueError):
                 errors["base"] = "invalid_values"
             else:
-                if channels is None:
+                if trigger_channels is None:
                     errors["base"] = "invalid_trigger_channels"
-                elif white_hold is None:
-                    errors["base"] = "invalid_white_hold"
+                elif camera_channels is None:
+                    errors["base"] = "invalid_camera_channels"
                 elif (
                     night_start is None or night_end is None or night_start == night_end
                 ):
@@ -496,28 +492,44 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
                     errors["base"] = "invalid_max_boost"
                 elif not MIN_BRIGHTNESS <= brightness <= MAX_BRIGHTNESS:
                     errors["base"] = "invalid_brightness"
-                elif (
-                    channels != current_channels
-                    and not await self._async_validate_channels(entry, channels)
-                ):
-                    errors["base"] = "nvr_invalid"
+                elif trigger_channels != current_trigger_channels:
+                    error = await self._async_validate_trigger_channels(
+                        entry, trigger_channels
+                    )
+                    if error is not None:
+                        errors["base"] = error
+                elif camera_channels != current_camera_channels:
+                    error = await self._async_validate_camera_channels(
+                        entry, camera_channels
+                    )
+                    if error is not None:
+                        errors["base"] = error
                 if not errors:
                     options = {
-                        CONF_TRIGGER_CHANNELS: channels,
+                        CONF_TRIGGER_CHANNELS: trigger_channels,
+                        CONF_CAMERA_CHANNELS: camera_channels,
                         CONF_NAME: name,
                         CONF_NIGHT_START: night_start.strftime("%H:%M"),
                         CONF_NIGHT_END: night_end.strftime("%H:%M"),
                         CONF_HOLD_SECONDS: hold_seconds,
                         CONF_MAX_BOOST_SECONDS: max_boost_seconds,
                         CONF_BRIGHTNESS: brightness,
-                        CONF_WHITE_HOLD_SECONDS: white_hold,
                     }
                     self.hass.config_entries.async_update_entry(
                         entry, title=name, options=options
                     )
                     return self.async_create_entry(title="", data=options)
             current_name = name
-            current_channels = channels if channels is not None else current_channels
+            current_trigger_channels = (
+                trigger_channels
+                if trigger_channels is not None
+                else current_trigger_channels
+            )
+            current_camera_channels = (
+                camera_channels
+                if camera_channels is not None
+                else current_camera_channels
+            )
             current_start = str(user_input.get(CONF_NIGHT_START, current_start))
             current_end = str(user_input.get(CONF_NIGHT_END, current_end))
             try:
@@ -526,8 +538,6 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
                 current_brightness = int(user_input[CONF_BRIGHTNESS])
             except (KeyError, TypeError, ValueError):
                 pass
-            if white_hold is not None:
-                current_white_hold = white_hold
 
         return self.async_show_form(
             step_id="init",
@@ -536,7 +546,11 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
                     vol.Required(CONF_NAME, default=current_name): TextSelector(),
                     vol.Required(
                         CONF_TRIGGER_CHANNELS,
-                        default=_format_channels(current_channels),
+                        default=_format_channels(current_trigger_channels),
+                    ): TextSelector(),
+                    vol.Required(
+                        CONF_CAMERA_CHANNELS,
+                        default=_format_channels(current_camera_channels),
                     ): TextSelector(),
                     vol.Required(
                         CONF_NIGHT_START, default=current_start
@@ -575,31 +589,20 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
                             unit_of_measurement="%",
                         )
                     ),
-                    vol.Required(
-                        CONF_WHITE_HOLD_SECONDS, default=current_white_hold
-                    ): NumberSelector(
-                        NumberSelectorConfig(
-                            min=MIN_WHITE_HOLD_SECONDS,
-                            max=MAX_WHITE_HOLD_SECONDS,
-                            mode=NumberSelectorMode.BOX,
-                            step=1,
-                            unit_of_measurement="s",
-                        )
-                    ),
                 }
             ),
             errors=errors,
             description_placeholders={
                 "nvr_host": str(entry.data.get(CONF_NVR_HOST, "")),
-                "nvr_channels": _format_channels(current_channels),
+                "trigger_channels": _format_channels(current_trigger_channels),
                 "camera_host": str(entry.data.get(CONF_CAMERA_HOST, "")),
-                "camera_channel": str(entry.data.get(CONF_CAMERA_CHANNEL, "")),
+                "camera_channels": _format_channels(current_camera_channels),
             },
         )
 
-    async def _async_validate_channels(
+    async def _async_validate_trigger_channels(
         self, entry: ConfigEntry, channels: list[int]
-    ) -> bool:
+    ) -> str | None:
         """Check that the new NVR channels expose field detection."""
         client = _client(
             str(entry.data[CONF_NVR_HOST]),
@@ -616,10 +619,37 @@ class HikvisionAlarmLightOptionsFlow(OptionsFlow):
                 )
         except (HikvisionAuthError, HikvisionConnectionError):
             _LOGGER.debug("Could not validate NVR channels", exc_info=True)
-            return False
+            return "cannot_connect"
         except (HikvisionResponseError, HikvisionError) as err:
             _LOGGER.debug("NVR channel validation failed: %s", err)
-            return False
+            return "nvr_invalid"
         finally:
             await self.hass.async_add_executor_job(client.close)
-        return True
+        return None
+
+    async def _async_validate_camera_channels(
+        self, entry: ConfigEntry, channels: list[int]
+    ) -> str | None:
+        """Check that the new camera channels expose supplement light settings."""
+        client = _client(
+            str(entry.data[CONF_CAMERA_HOST]),
+            int(entry.data[CONF_CAMERA_PORT]),
+            bool(entry.data[CONF_CAMERA_USE_SSL]),
+            bool(entry.data[CONF_CAMERA_VERIFY_SSL]),
+            str(entry.data[CONF_CAMERA_USERNAME]),
+            str(entry.data[CONF_CAMERA_PASSWORD]),
+        )
+        try:
+            for channel in channels:
+                await self.hass.async_add_executor_job(
+                    client.get_supplement_light, channel
+                )
+        except (HikvisionAuthError, HikvisionConnectionError):
+            _LOGGER.debug("Could not validate camera channels", exc_info=True)
+            return "cannot_connect"
+        except (HikvisionResponseError, HikvisionError) as err:
+            _LOGGER.debug("Camera channel validation failed: %s", err)
+            return "camera_invalid"
+        finally:
+            await self.hass.async_add_executor_job(client.close)
+        return None

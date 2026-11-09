@@ -30,7 +30,6 @@ def _snapshot_dict(runtime: RuntimeData) -> dict[str, Any]:
         "camera_mode": data.camera_mode,
         "boost_ends_at": data.boost_ends_at.isoformat() if data.boost_ends_at else None,
         "last_error": data.last_error,
-        "light_control": data.light_control,
     }
 
 
@@ -57,7 +56,7 @@ async def async_get_config_entry_diagnostics(
         "camera": {
             "device": asdict(runtime.camera_device),
             "base_url": runtime.camera_client.base_url,
-            "channel": runtime.settings.camera_channel,
+            "channels": list(runtime.settings.camera_channels),
         },
         "state": _snapshot_dict(runtime),
     }
